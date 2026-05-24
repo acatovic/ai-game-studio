@@ -17,8 +17,6 @@ Full Demo: https://www.youtube.com/watch?v=MijheSPXnDo
 ## Install
 
 ```bash
-git clone <this-repo>
-cd ai-game-studio
 npm install
 
 cp .env.example .env
