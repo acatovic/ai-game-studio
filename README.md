@@ -1,10 +1,12 @@
-# Sprite Sheet Builder
+# AI Game Studio
 
 A small local web app for generating 2D game sprites and animation frames from text prompts using xAI / Grok Imagine. Generate a reference sprite → describe motion → get extracted PNG frames → compose a 1×N spritesheet with a looping animated preview.
 
 Backgrounds are chroma-keyed to transparency automatically, so frames drop straight into a game engine. Projects can be saved and loaded by name.
 
 ![Mockup](mockup.png)
+
+Full Demo: https://www.youtube.com/watch?v=MijheSPXnDo
 
 ## Requirements
 
