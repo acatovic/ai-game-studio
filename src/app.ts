@@ -396,7 +396,7 @@ export function mountApp(root: HTMLElement) {
       if (!health.hasApiKey) {
         setStatus(
           spriteStatus,
-          "XAI_API_KEY is missing on the server. Add it to .env and restart.",
+          "OPENROUTER_API_KEY is missing on the server. Add it to .env and restart.",
           "error",
         );
       }

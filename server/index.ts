@@ -33,7 +33,7 @@ import {
 import { rm } from "node:fs/promises";
 
 const PORT = Number(process.env.PORT ?? 8787);
-const HAS_KEY = Boolean(process.env.XAI_API_KEY);
+const HAS_KEY = Boolean(process.env.OPENROUTER_API_KEY);
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
@@ -42,7 +42,7 @@ app.use("/projects", express.static(PROJECTS_DIR, { fallthrough: false }));
 function requireKey(_req: Request, res: Response, next: NextFunction) {
   if (!HAS_KEY) {
     res.status(500).json({
-      error: "XAI_API_KEY is not configured. Add it to .env and restart the server.",
+      error: "OPENROUTER_API_KEY is not configured. Add it to .env and restart the server.",
     });
     return;
   }
@@ -204,9 +204,9 @@ app.post("/api/sprites/animate", requireKey, async (req, res) => {
 
     await wipeLatestSpritesheet();
 
-    const videoUrl = await generateSpriteMotionVideo(imageInput, text, duration);
+    const video = await generateSpriteMotionVideo(imageInput, text, duration);
     const videoAbs = path.join(LATEST_DIR, PROJECT_FILES.source);
-    await downloadVideo(videoUrl, videoAbs);
+    await downloadVideo(video.url, videoAbs, video.headers);
 
     const framesAbs = path.join(LATEST_DIR, PROJECT_FILES.framesDir);
     const frameFiles = await extractFrames(videoAbs, framesAbs);
@@ -248,12 +248,14 @@ function handleError(err: unknown, res: Response) {
 }
 
 function redact(msg: string): string {
-  return msg.replace(/xai-[A-Za-z0-9_-]+/g, "***");
+  return msg
+    .replace(/sk-or-[A-Za-z0-9_-]+/g, "***")
+    .replace(/xai-[A-Za-z0-9_-]+/g, "***");
 }
 
 app.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
   if (!HAS_KEY) {
-    console.warn("[server] WARNING: XAI_API_KEY is missing — endpoints will return 500");
+    console.warn("[server] WARNING: OPENROUTER_API_KEY is missing — endpoints will return 500");
   }
 });
