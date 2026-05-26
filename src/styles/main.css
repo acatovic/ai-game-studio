@@ -287,6 +287,40 @@ button {
   color: var(--text-subtle);
 }
 
+.select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--card)
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'><path d='M6 8l4 4 4-4' stroke='%236b7280' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>")
+    no-repeat right 8px center / 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 28px 8px 11px;
+  font-size: 13px;
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.motion-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.motion-controls__btn {
+  height: 36px;
+}
+
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-flex;

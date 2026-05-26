@@ -8,7 +8,23 @@
 // see resolveDownloadableUrl below.
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
-const MODEL = "x-ai/grok-imagine-video";
+
+export const VIDEO_MODELS = [
+  { id: "x-ai/grok-imagine-video", label: "Grok Imagine Video", defaultDuration: 2 },
+  { id: "bytedance/seedance-2.0", label: "Seedance 2.0", defaultDuration: 4 },
+] as const;
+
+export type VideoModelId = (typeof VIDEO_MODELS)[number]["id"];
+
+export const DEFAULT_VIDEO_MODEL: VideoModelId = "x-ai/grok-imagine-video";
+
+export function isVideoModelId(v: unknown): v is VideoModelId {
+  return typeof v === "string" && VIDEO_MODELS.some((m) => m.id === v);
+}
+
+export function defaultDurationFor(id: VideoModelId): number {
+  return VIDEO_MODELS.find((m) => m.id === id)!.defaultDuration;
+}
 
 const POLL_INTERVAL_MS = 3000;
 const POLL_MAX_ATTEMPTS = 100; // ~5 min cap
@@ -49,6 +65,7 @@ export async function generateSpriteMotionVideo(
   image: string,
   text: string,
   duration = 2,
+  model: VideoModelId = DEFAULT_VIDEO_MODEL,
 ): Promise<VideoDownload> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
@@ -62,7 +79,7 @@ export async function generateSpriteMotionVideo(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       prompt: fullText,
       duration,
       input_references: [

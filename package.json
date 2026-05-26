@@ -11,8 +11,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ai-sdk/xai": "4.0.0-canary.66",
-    "ai": "beta",
     "express": "^4.21.0"
   },
   "devDependencies": {

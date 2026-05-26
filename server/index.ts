@@ -3,8 +3,14 @@ import express, { type Request, type Response, type NextFunction } from "express
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { generateSpriteImage } from "./xai-image.js";
-import { generateSpriteMotionVideo } from "./xai-video.js";
+import { generateSpriteImage } from "./image.js";
+import {
+  DEFAULT_VIDEO_MODEL,
+  VIDEO_MODELS,
+  defaultDurationFor,
+  generateSpriteMotionVideo,
+  isVideoModelId,
+} from "./video.js";
 import { extractFrames } from "./extract-frames.js";
 import { buildPreviewGif } from "./build-gif.js";
 import {
@@ -67,6 +73,10 @@ function asImageRef(v: unknown): string {
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, hasApiKey: HAS_KEY });
+});
+
+app.get("/api/models/video", (_req, res) => {
+  res.json({ models: VIDEO_MODELS, default: DEFAULT_VIDEO_MODEL });
 });
 
 app.get("/api/projects/current", async (_req, res) => {
@@ -197,14 +207,15 @@ app.post("/api/sprites/animate", requireKey, async (req, res) => {
   try {
     const image = asImageRef(req.body?.image);
     const text = asString(req.body?.text, "text");
+    const model = isVideoModelId(req.body?.model) ? req.body.model : DEFAULT_VIDEO_MODEL;
     const duration =
-      typeof req.body?.duration === "number" ? req.body.duration : 2;
+      typeof req.body?.duration === "number" ? req.body.duration : defaultDurationFor(model);
 
     const imageInput = await resolveImageInput(image);
 
     await wipeLatestSpritesheet();
 
-    const video = await generateSpriteMotionVideo(imageInput, text, duration);
+    const video = await generateSpriteMotionVideo(imageInput, text, duration, model);
     const videoAbs = path.join(LATEST_DIR, PROJECT_FILES.source);
     await downloadVideo(video.url, videoAbs, video.headers);
 
@@ -214,6 +225,7 @@ app.post("/api/sprites/animate", requireKey, async (req, res) => {
 
     const m = await updateLatest({
       motionPrompt: text,
+      motionModel: model,
       frames,
       selectedFrameIndices: frames.map((_, i) => i),
       spritesheet: null,
@@ -248,9 +260,7 @@ function handleError(err: unknown, res: Response) {
 }
 
 function redact(msg: string): string {
-  return msg
-    .replace(/sk-or-[A-Za-z0-9_-]+/g, "***")
-    .replace(/xai-[A-Za-z0-9_-]+/g, "***");
+  return msg.replace(/sk-or-[A-Za-z0-9_-]+/g, "***");
 }
 
 app.listen(PORT, () => {

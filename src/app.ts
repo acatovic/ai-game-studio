@@ -4,6 +4,7 @@ import {
   deleteProject,
   generateSprite,
   getCurrentProject,
+  getVideoModels,
   listProjects,
   loadProject,
   newProject,
@@ -42,6 +43,7 @@ export function mountApp(root: HTMLElement) {
   const spriteStatus = root.querySelector<HTMLDivElement>("#sprite-status")!;
 
   const motionInput = root.querySelector<HTMLTextAreaElement>("#motion-prompt")!;
+  const motionModelSelect = root.querySelector<HTMLSelectElement>("#motion-model")!;
   const generateFramesBtn = root.querySelector<HTMLButtonElement>("#btn-generate-frames")!;
   const framesGrid = root.querySelector<HTMLDivElement>("#frames-grid")!;
   const framesStatus = root.querySelector<HTMLDivElement>("#frames-status")!;
@@ -65,6 +67,10 @@ export function mountApp(root: HTMLElement) {
 
   motionInput.addEventListener("input", () => {
     store.set({ motionPrompt: motionInput.value });
+  });
+
+  motionModelSelect.addEventListener("change", () => {
+    store.set({ motionModel: motionModelSelect.value });
   });
 
   generateSpriteBtn.addEventListener("click", async () => {
@@ -112,7 +118,7 @@ export function mountApp(root: HTMLElement) {
     store.set({ status: "generating-video", errorMessage: null });
     setStatus(framesStatus, `${spinner()}Generating motion video…`);
     try {
-      const view = await animateSprite(state.spriteSrc, text);
+      const view = await animateSprite(state.spriteSrc, text, state.motionModel);
       const v = view.updatedAt;
       store.set({
         status: "done",
@@ -341,6 +347,8 @@ export function mountApp(root: HTMLElement) {
     motionInput.value = view.motionPrompt;
   }
 
+  let lastModelOptionsKey = "";
+
   // ---- Render reactivity ----
   store.subscribe((state) => {
     const busy =
@@ -388,11 +396,23 @@ export function mountApp(root: HTMLElement) {
       state.currentProjectName === "latest" ? "untitled" : state.currentProjectName;
 
     loadMenu.innerHTML = renderLoadMenu(state.savedProjects);
+
+    // Re-render the model select only when the list changes (avoid clobbering user input mid-edit)
+    const optionsKey = state.videoModels.map((m) => `${m.id}|${m.label}`).join(",");
+    if (optionsKey !== lastModelOptionsKey) {
+      motionModelSelect.innerHTML = state.videoModels
+        .map((m) => `<option value="${escapeAttr(m.id)}">${escapeHtml(m.label)}</option>`)
+        .join("");
+      lastModelOptionsKey = optionsKey;
+    }
+    if (motionModelSelect.value !== state.motionModel) {
+      motionModelSelect.value = state.motionModel;
+    }
   });
 
   // ---- Boot ----
-  Promise.all([checkHealth(), getCurrentProject(), listProjects()])
-    .then(([health, view, projects]) => {
+  Promise.all([checkHealth(), getCurrentProject(), listProjects(), getVideoModels()])
+    .then(([health, view, projects, modelsResp]) => {
       if (!health.hasApiKey) {
         setStatus(
           spriteStatus,
@@ -400,7 +420,10 @@ export function mountApp(root: HTMLElement) {
           "error",
         );
       }
-      store.set({ savedProjects: projects });
+      store.set({
+        savedProjects: projects,
+        videoModels: [...modelsResp.models],
+      });
       applyView(view);
     })
     .catch((err) => {
@@ -549,10 +572,16 @@ function renderShell(): string {
                 rows="3"
               ></textarea>
             </div>
-            <button id="btn-generate-frames" class="btn btn--secondary" type="button">
-              ${frameIcon}
-              Generate Frames
-            </button>
+            <div class="motion-controls">
+              <div class="field motion-controls__model">
+                <label class="field__label" for="motion-model">Model</label>
+                <select id="motion-model" class="select"></select>
+              </div>
+              <button id="btn-generate-frames" class="btn btn--secondary motion-controls__btn" type="button">
+                ${frameIcon}
+                Generate Frames
+              </button>
+            </div>
             <div id="frames-status" class="status"></div>
             <div class="frames-section">
               <div class="frames-section__label">Select frames to include</div>

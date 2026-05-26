@@ -1,8 +1,10 @@
 # AI Game Studio
 
-A small local web app for generating 2D game sprites and animation frames from text prompts using xAI / Grok Imagine. Generate a reference sprite → describe motion → get extracted PNG frames → compose a 1×N spritesheet with a looping animated preview.
+A local web app — and the start of a fuller AI Game Studio — for generating game assets from text prompts. Today: 2D reference sprites and animation frames composed into a 1×N spritesheet with a looping animated preview. Backgrounds are chroma-keyed to transparency automatically, so frames drop straight into a game engine. Projects can be saved and loaded by name.
 
-Backgrounds are chroma-keyed to transparency automatically, so frames drop straight into a game engine. Projects can be saved and loaded by name.
+The app talks to [OpenRouter](https://openrouter.ai) as the single boundary to the model providers. One key gives access to 300+ image / video / audio / text models, which is the runway for everything on the TO-DO list (backgrounds, tilemaps, SFX, music, voice, …).
+
+Pick the video model at generation time — currently **Grok Imagine Video** (xAI) or **Seedance 2.0** (ByteDance), both routed through OpenRouter.
 
 ![Mockup](mockup.png)
 
@@ -12,7 +14,7 @@ Full Demo: https://www.youtube.com/watch?v=MijheSPXnDo
 
 - Node 20+
 - `ffmpeg` on `PATH`
-- An [xAI API key](https://x.ai)
+- An [OpenRouter API key](https://openrouter.ai/keys)
 
 ## Install
 
@@ -21,7 +23,7 @@ npm install
 
 cp .env.example .env
 # then open .env and paste your key:
-# XAI_API_KEY=xai-...
+# OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
 ## Run
@@ -37,7 +39,7 @@ This starts Vite (frontend, :5173) and an Express server (backend, :8787) togeth
 ## Using it
 
 1. Type a sprite prompt in column 1 → **Generate Reference Sprite**.
-2. Type a motion prompt in column 2 → **Generate Frames** (calls image-to-video, extracts transparent PNGs).
+2. Pick a video model and type a motion prompt in column 2 → **Generate Frames** (calls image-to-video via OpenRouter, polls until done, extracts transparent PNGs).
 3. Click frame tiles to toggle which ones to include.
 4. **Generate Spritesheet** → composes a 1×N PNG client-side, builds a looping GIF preview server-side.
 5. **Export PNG** to download the spritesheet.
@@ -63,7 +65,9 @@ Generated artifacts live under `projects/` (gitignored). The current working sta
 
 Tips:
 - Keep motion prompts focused on the action. Phrases like *"no camera movement"*, *"side-view"*, and *"no head tilting"* help keep frames game-ready.
-- Default video duration is 2 seconds, ~30 fps → ~60 frames. Trim with the frame selector before composing.
+- Per-model default durations: Grok Imagine Video = 2 s, Seedance 2.0 = 4 s. ~24–30 fps on the source clip, so trim with the frame selector before composing.
+- Switching the model is one entry in `server/video.ts` — see `VIDEO_MODELS`.
+- Recommend sticking to Grok Imagine Video since it's much cheaper than Seedance 2
 
 ## TO-DO
 
@@ -78,4 +82,4 @@ Tips:
 
 ## More
 
-See [AGENTS.md](AGENTS.md) for the full spec, architecture, endpoint list, and chroma-key tuning notes.
+See [AGENTS.md](AGENTS.md) for the full spec, architecture, endpoint list, model-registry pattern, and chroma-key tuning notes.
