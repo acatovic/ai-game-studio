@@ -45,9 +45,13 @@ export async function saveDataUrlPng(dataUrl: string, outputPath: string): Promi
   await saveBase64Image(match[2], outputPath);
 }
 
-export async function downloadVideo(url: string, outputPath: string): Promise<void> {
+export async function downloadVideo(
+  url: string,
+  outputPath: string,
+  headers?: Record<string, string>,
+): Promise<void> {
   await mkdir(path.dirname(outputPath), { recursive: true });
-  const res = await fetch(url);
+  const res = await fetch(url, headers ? { headers } : undefined);
   if (!res.ok) throw new Error(`video download failed (${res.status})`);
   const arrayBuffer = await res.arrayBuffer();
   await writeFile(outputPath, Buffer.from(arrayBuffer));

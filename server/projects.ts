@@ -13,6 +13,7 @@ export interface ProjectManifest {
   name: string;
   spritePrompt: string;
   motionPrompt: string;
+  motionModel: string;
   sprite: string | null;
   spriteDimensions: { w: number; h: number } | null;
   frames: string[];
@@ -26,6 +27,7 @@ export interface ProjectView {
   name: string;
   spritePrompt: string;
   motionPrompt: string;
+  motionModel: string;
   spriteUrl: string | null;
   spriteDimensions: { w: number; h: number } | null;
   frames: string[];
@@ -40,6 +42,7 @@ export function emptyManifest(name = "latest"): ProjectManifest {
     name,
     spritePrompt: "",
     motionPrompt: "",
+    motionModel: "x-ai/grok-imagine-video",
     sprite: null,
     spriteDimensions: null,
     frames: [],
@@ -97,6 +100,7 @@ export function toView(m: ProjectManifest): ProjectView {
     name: m.name,
     spritePrompt: m.spritePrompt,
     motionPrompt: m.motionPrompt,
+    motionModel: m.motionModel,
     spriteUrl: m.sprite ? base + m.sprite : null,
     spriteDimensions: m.spriteDimensions,
     frames: m.frames.map((f) => base + f),

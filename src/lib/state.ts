@@ -1,4 +1,6 @@
-import type { ProjectSummary, ProjectView } from "./api";
+import type { ProjectSummary, ProjectView, VideoModelOption } from "./api";
+
+export const DEFAULT_VIDEO_MODEL = "x-ai/grok-imagine-video";
 
 export type AppStatus =
   | "idle"
@@ -13,6 +15,8 @@ export interface AppState {
   errorMessage: string | null;
   spritePrompt: string;
   motionPrompt: string;
+  motionModel: string;
+  videoModels: VideoModelOption[];
   spriteSrc: string | null;
   spriteDimensions: { w: number; h: number } | null;
   frames: string[];
@@ -31,6 +35,8 @@ export function createInitialState(): AppState {
     errorMessage: null,
     spritePrompt: "",
     motionPrompt: "",
+    motionModel: DEFAULT_VIDEO_MODEL,
+    videoModels: [],
     spriteSrc: null,
     spriteDimensions: null,
     frames: [],
@@ -55,6 +61,7 @@ export function hydrateFromView(view: ProjectView): Partial<AppState> {
   return {
     spritePrompt: view.spritePrompt,
     motionPrompt: view.motionPrompt,
+    motionModel: view.motionModel || DEFAULT_VIDEO_MODEL,
     spriteSrc: cacheBust(view.spriteUrl, v),
     spriteDimensions: view.spriteDimensions,
     frames: view.frames.map((f) => cacheBust(f, v)!),
