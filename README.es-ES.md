@@ -6,7 +6,7 @@ Una aplicación web local — y el inicio de un AI Game Studio más completo —
 
 La aplicación se comunica con [OpenRouter](https://openrouter.ai) como único punto de enlace a los proveedores de modelos. Una sola clave da acceso a más de 300 modelos de imagen, video, audio y texto, lo que sienta las bases para todo lo que hay en la lista de TO-DO (fondos, tilemaps, SFX, música, voz, …).
 
-Elige el modelo de video en el momento de la generación: actualmente **Grok Imagine Video** (xAI) o **Seedance 2.0** (ByteDance), ambos enrutados a través de OpenRouter.
+Elige los modelos de imagen y video en el momento de la generación. Las opciones de imagen son **OpenAI GPT Image 2** (predeterminado) y **xAI Grok Imagine Image 2.0**; las opciones de video son **Grok Imagine Video** (xAI), **MiniMax H3** y **Seedance 2.0** (ByteDance). Toda la generación se enruta a través de OpenRouter.
 
 ![Mockup](mockup.png)
 
@@ -40,7 +40,7 @@ Esto inicia Vite (frontend, :5173) y un servidor Express (backend, :8787) simult
 
 ## Cómo usarlo
 
-1. Escribe un prompt de sprite en la columna 1 → **Generate Reference Sprite**.
+1. Selecciona un modelo de imagen y escribe un prompt de sprite en la columna 1 → **Generate Reference Sprite**.
 2. Selecciona un modelo de video y escribe un prompt de movimiento en la columna 2 → **Generate Frames** (realiza la llamada de imagen-a-video a través de OpenRouter, consulta el estado hasta que finalice y extrae PNGs transparentes).
 3. Haz clic en los cuadros de los fotogramas para activar o desactivar cuáles incluir.
 4. **Generate Spritesheet** → compone un PNG de 1×N en el cliente y genera una vista previa GIF en bucle en el servidor.
@@ -67,7 +67,8 @@ Los artefactos generados se almacenan en `projects/` (ignorado por git). El esta
 
 Consejos:
 - Mantén los prompts de movimiento enfocados en la acción. Frases como *"no camera movement"*, *"side-view"* y *"no head tilting"* ayudan a mantener los fotogramas listos para el juego.
-- Duraciones predeterminadas por modelo: Grok Imagine Video = 2 s, Seedance 2.0 = 4 s. ~24–30 fps en el clip original, así que recorta con el selector de fotogramas antes de componer.
+- Cambiar el modelo de imagen requiere modificar una entrada en `server/image.ts` — consulta `IMAGE_MODELS`.
+- Duraciones predeterminadas por modelo: Grok Imagine Video = 2 s, MiniMax H3 = 5 s, Seedance 2.0 = 4 s. ~24–30 fps en el clip original, así que recorta con el selector de fotogramas antes de componer.
 - Cambiar el modelo requiere modificar una entrada en `server/video.ts` — consulta `VIDEO_MODELS`.
 - Recomienda quedarte con Grok Imagine Video ya que es mucho más barato que Seedance 2
 

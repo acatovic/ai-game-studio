@@ -1,5 +1,11 @@
-import type { ProjectSummary, ProjectView, VideoModelOption } from "./api";
+import type {
+  ImageModelOption,
+  ProjectSummary,
+  ProjectView,
+  VideoModelOption,
+} from "./api";
 
+export const DEFAULT_IMAGE_MODEL = "openai/gpt-image-2";
 export const DEFAULT_VIDEO_MODEL = "x-ai/grok-imagine-video";
 
 export type AppStatus =
@@ -14,6 +20,8 @@ export interface AppState {
   status: AppStatus;
   errorMessage: string | null;
   spritePrompt: string;
+  spriteModel: string;
+  imageModels: ImageModelOption[];
   motionPrompt: string;
   motionModel: string;
   videoModels: VideoModelOption[];
@@ -34,6 +42,8 @@ export function createInitialState(): AppState {
     status: "idle",
     errorMessage: null,
     spritePrompt: "",
+    spriteModel: DEFAULT_IMAGE_MODEL,
+    imageModels: [],
     motionPrompt: "",
     motionModel: DEFAULT_VIDEO_MODEL,
     videoModels: [],
@@ -60,6 +70,7 @@ export function hydrateFromView(view: ProjectView): Partial<AppState> {
   const v = view.updatedAt;
   return {
     spritePrompt: view.spritePrompt,
+    spriteModel: view.spriteModel || DEFAULT_IMAGE_MODEL,
     motionPrompt: view.motionPrompt,
     motionModel: view.motionModel || DEFAULT_VIDEO_MODEL,
     spriteSrc: cacheBust(view.spriteUrl, v),
