@@ -12,6 +12,7 @@ import {
 export interface ProjectManifest {
   name: string;
   spritePrompt: string;
+  spriteModel: string;
   motionPrompt: string;
   motionModel: string;
   sprite: string | null;
@@ -26,6 +27,7 @@ export interface ProjectManifest {
 export interface ProjectView {
   name: string;
   spritePrompt: string;
+  spriteModel: string;
   motionPrompt: string;
   motionModel: string;
   spriteUrl: string | null;
@@ -41,6 +43,7 @@ export function emptyManifest(name = "latest"): ProjectManifest {
   return {
     name,
     spritePrompt: "",
+    spriteModel: "openai/gpt-image-2",
     motionPrompt: "",
     motionModel: "x-ai/grok-imagine-video",
     sprite: null,
@@ -99,6 +102,7 @@ export function toView(m: ProjectManifest): ProjectView {
   return {
     name: m.name,
     spritePrompt: m.spritePrompt,
+    spriteModel: m.spriteModel,
     motionPrompt: m.motionPrompt,
     motionModel: m.motionModel,
     spriteUrl: m.sprite ? base + m.sprite : null,

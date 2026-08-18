@@ -4,7 +4,7 @@ A local web app — and the start of a fuller AI Game Studio — for generating 
 
 The app talks to [OpenRouter](https://openrouter.ai) as the single boundary to the model providers. One key gives access to 300+ image / video / audio / text models, which is the runway for everything on the TO-DO list (backgrounds, tilemaps, SFX, music, voice, …).
 
-Pick the video model at generation time — currently **Grok Imagine Video** (xAI) or **Seedance 2.0** (ByteDance), both routed through OpenRouter.
+Pick both image and video models at generation time. Image options are **OpenAI GPT Image 2** (default) and **xAI Grok Imagine Image 2.0**; video options are **Grok Imagine Video** (xAI), **MiniMax H3**, and **Seedance 2.0** (ByteDance). All generation is routed through OpenRouter.
 
 ![Mockup](mockup.png)
 
@@ -38,7 +38,7 @@ This starts Vite (frontend, :5173) and an Express server (backend, :8787) togeth
 
 ## Using it
 
-1. Type a sprite prompt in column 1 → **Generate Reference Sprite**.
+1. Pick an image model and type a sprite prompt in column 1 → **Generate Reference Sprite**.
 2. Pick a video model and type a motion prompt in column 2 → **Generate Frames** (calls image-to-video via OpenRouter, polls until done, extracts transparent PNGs).
 3. Click frame tiles to toggle which ones to include.
 4. **Generate Spritesheet** → composes a 1×N PNG client-side, builds a looping GIF preview server-side.
@@ -65,7 +65,8 @@ Generated artifacts live under `projects/` (gitignored). The current working sta
 
 Tips:
 - Keep motion prompts focused on the action. Phrases like *"no camera movement"*, *"side-view"*, and *"no head tilting"* help keep frames game-ready.
-- Per-model default durations: Grok Imagine Video = 2 s, Seedance 2.0 = 4 s. ~24–30 fps on the source clip, so trim with the frame selector before composing.
+- Switching the image model is one entry in `server/image.ts` — see `IMAGE_MODELS`.
+- Per-model default durations: Grok Imagine Video = 2 s, MiniMax H3 = 5 s, Seedance 2.0 = 4 s. ~24–30 fps on the source clip, so trim with the frame selector before composing.
 - Switching the model is one entry in `server/video.ts` — see `VIDEO_MODELS`.
 - Recommend sticking to Grok Imagine Video since it's much cheaper than Seedance 2
 

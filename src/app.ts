@@ -4,6 +4,7 @@ import {
   deleteProject,
   generateSprite,
   getCurrentProject,
+  getImageModels,
   getVideoModels,
   listProjects,
   loadProject,
@@ -37,6 +38,7 @@ export function mountApp(root: HTMLElement) {
 
   // ---- Refs ----
   const promptInput = root.querySelector<HTMLTextAreaElement>("#sprite-prompt")!;
+  const spriteModelSelect = root.querySelector<HTMLSelectElement>("#sprite-model")!;
   const generateSpriteBtn = root.querySelector<HTMLButtonElement>("#btn-generate-sprite")!;
   const spritePreview = root.querySelector<HTMLDivElement>("#sprite-preview")!;
   const spriteCaption = root.querySelector<HTMLDivElement>("#sprite-caption")!;
@@ -65,6 +67,10 @@ export function mountApp(root: HTMLElement) {
     store.set({ spritePrompt: promptInput.value });
   });
 
+  spriteModelSelect.addEventListener("change", () => {
+    store.set({ spriteModel: spriteModelSelect.value });
+  });
+
   motionInput.addEventListener("input", () => {
     store.set({ motionPrompt: motionInput.value });
   });
@@ -82,7 +88,7 @@ export function mountApp(root: HTMLElement) {
     store.set({ status: "generating-image", errorMessage: null });
     setStatus(spriteStatus, `${spinner()}Generating reference sprite…`);
     try {
-      const result = await generateSprite(prompt);
+      const result = await generateSprite(prompt, store.get().spriteModel);
       const img = await loadImage(result.dataUrl);
       store.set({
         status: "idle",
@@ -347,7 +353,8 @@ export function mountApp(root: HTMLElement) {
     motionInput.value = view.motionPrompt;
   }
 
-  let lastModelOptionsKey = "";
+  let lastImageModelOptionsKey = "";
+  let lastVideoModelOptionsKey = "";
 
   // ---- Render reactivity ----
   store.subscribe((state) => {
@@ -357,6 +364,7 @@ export function mountApp(root: HTMLElement) {
       state.status === "extracting-frames";
 
     generateSpriteBtn.disabled = busy;
+    spriteModelSelect.disabled = busy;
     generateFramesBtn.disabled = busy || !state.spriteSrc;
     generateSheetBtn.disabled = busy || state.frames.length === 0;
     exportBtn.disabled = !state.spritesheetSrc;
@@ -398,12 +406,23 @@ export function mountApp(root: HTMLElement) {
     loadMenu.innerHTML = renderLoadMenu(state.savedProjects);
 
     // Re-render the model select only when the list changes (avoid clobbering user input mid-edit)
-    const optionsKey = state.videoModels.map((m) => `${m.id}|${m.label}`).join(",");
-    if (optionsKey !== lastModelOptionsKey) {
+    const imageOptionsKey = state.imageModels.map((m) => `${m.id}|${m.label}`).join(",");
+    if (imageOptionsKey !== lastImageModelOptionsKey) {
+      spriteModelSelect.innerHTML = state.imageModels
+        .map((m) => `<option value="${escapeAttr(m.id)}">${escapeHtml(m.label)}</option>`)
+        .join("");
+      lastImageModelOptionsKey = imageOptionsKey;
+    }
+    if (spriteModelSelect.value !== state.spriteModel) {
+      spriteModelSelect.value = state.spriteModel;
+    }
+
+    const videoOptionsKey = state.videoModels.map((m) => `${m.id}|${m.label}`).join(",");
+    if (videoOptionsKey !== lastVideoModelOptionsKey) {
       motionModelSelect.innerHTML = state.videoModels
         .map((m) => `<option value="${escapeAttr(m.id)}">${escapeHtml(m.label)}</option>`)
         .join("");
-      lastModelOptionsKey = optionsKey;
+      lastVideoModelOptionsKey = videoOptionsKey;
     }
     if (motionModelSelect.value !== state.motionModel) {
       motionModelSelect.value = state.motionModel;
@@ -411,8 +430,14 @@ export function mountApp(root: HTMLElement) {
   });
 
   // ---- Boot ----
-  Promise.all([checkHealth(), getCurrentProject(), listProjects(), getVideoModels()])
-    .then(([health, view, projects, modelsResp]) => {
+  Promise.all([
+    checkHealth(),
+    getCurrentProject(),
+    listProjects(),
+    getImageModels(),
+    getVideoModels(),
+  ])
+    .then(([health, view, projects, imageModelsResp, videoModelsResp]) => {
       if (!health.hasApiKey) {
         setStatus(
           spriteStatus,
@@ -422,7 +447,8 @@ export function mountApp(root: HTMLElement) {
       }
       store.set({
         savedProjects: projects,
-        videoModels: [...modelsResp.models],
+        imageModels: [...imageModelsResp.models],
+        videoModels: [...videoModelsResp.models],
       });
       applyView(view);
     })
@@ -546,6 +572,10 @@ function renderShell(): string {
                 placeholder="Describe the character or object…"
                 rows="3"
               ></textarea>
+            </div>
+            <div class="field">
+              <label class="field__label" for="sprite-model">Model</label>
+              <select id="sprite-model" class="select"></select>
             </div>
             <button id="btn-generate-sprite" class="btn btn--primary btn--block" type="button">
               ${sparkleIcon}

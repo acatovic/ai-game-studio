@@ -1,6 +1,7 @@
 export interface ProjectView {
   name: string;
   spritePrompt: string;
+  spriteModel: string;
   motionPrompt: string;
   motionModel: string;
   spriteUrl: string | null;
@@ -16,6 +17,16 @@ export interface VideoModelOption {
   id: string;
   label: string;
   defaultDuration: number;
+}
+
+export interface ImageModelOption {
+  id: string;
+  label: string;
+}
+
+export interface ImageModelsResponse {
+  models: readonly ImageModelOption[];
+  default: string;
 }
 
 export interface VideoModelsResponse {
@@ -59,8 +70,11 @@ async function getJson<T>(path: string): Promise<T> {
   return json as T;
 }
 
-export function generateSprite(prompt: string): Promise<GenerateSpriteResponse> {
-  return postJson("/api/sprites/generate", { prompt });
+export function generateSprite(
+  prompt: string,
+  model?: string,
+): Promise<GenerateSpriteResponse> {
+  return postJson("/api/sprites/generate", { prompt, model });
 }
 
 export function animateSprite(
@@ -73,6 +87,10 @@ export function animateSprite(
 
 export function getVideoModels(): Promise<VideoModelsResponse> {
   return getJson("/api/models/video");
+}
+
+export function getImageModels(): Promise<ImageModelsResponse> {
+  return getJson("/api/models/image");
 }
 
 export function getCurrentProject(): Promise<ProjectView> {

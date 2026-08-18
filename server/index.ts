@@ -3,7 +3,12 @@ import express, { type Request, type Response, type NextFunction } from "express
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { generateSpriteImage } from "./image.js";
+import {
+  DEFAULT_IMAGE_MODEL,
+  IMAGE_MODELS,
+  generateSpriteImage,
+  isImageModelId,
+} from "./image.js";
 import {
   DEFAULT_VIDEO_MODEL,
   VIDEO_MODELS,
@@ -77,6 +82,10 @@ app.get("/api/health", (_req, res) => {
 
 app.get("/api/models/video", (_req, res) => {
   res.json({ models: VIDEO_MODELS, default: DEFAULT_VIDEO_MODEL });
+});
+
+app.get("/api/models/image", (_req, res) => {
+  res.json({ models: IMAGE_MODELS, default: DEFAULT_IMAGE_MODEL });
 });
 
 app.get("/api/projects/current", async (_req, res) => {
@@ -174,7 +183,12 @@ app.post("/api/projects/spritesheet", async (req, res) => {
 app.post("/api/sprites/generate", requireKey, async (req, res) => {
   try {
     const prompt = asString(req.body?.prompt, "prompt");
-    const base64 = await generateSpriteImage(prompt);
+    const requestedModel = req.body?.model;
+    if (requestedModel !== undefined && !isImageModelId(requestedModel)) {
+      throw new Error("unsupported image model");
+    }
+    const model = requestedModel ?? DEFAULT_IMAGE_MODEL;
+    const base64 = await generateSpriteImage(prompt, model);
 
     // Reset downstream artifacts (frames + spritesheet) before writing the new sprite
     await wipeLatestFramesAndSheet();
@@ -186,6 +200,7 @@ app.post("/api/sprites/generate", requireKey, async (req, res) => {
 
     const m = await updateLatest({
       spritePrompt: prompt,
+      spriteModel: model,
       sprite: PROJECT_FILES.ref,
       spriteDimensions: dims,
       frames: [],
