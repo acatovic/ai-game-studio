@@ -680,3 +680,24 @@ button {
   opacity: 1;
   transform: translateY(0);
 }
+
+.sprite-toolbar { max-width: 1280px; margin: 0 auto 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sprite-toolbar label { font-weight: 600; font-size: 13px; }
+.sprite-toolbar .select { width: 220px; }
+.sprite-toolbar > span { margin-left: auto; color: var(--text-muted); font-size: 12px; }
+@media (max-width: 700px) {
+  .app-header { flex-wrap: wrap; gap: 14px; padding: 16px; }
+  .app-header__brand { flex-wrap: wrap; }
+  .sprite-toolbar > span { width: 100%; margin-left: 0; }
+}
+
+[hidden] { display: none !important; }
+.welcome { min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; }
+.welcome__content { width: min(100%, 580px); text-align: center; }
+.welcome__eyebrow { color: var(--primary); font-weight: 600; font-size: 14px; }
+.welcome h1 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -0.035em; line-height: 1.2; margin: 18px 0 12px; }
+.welcome p { color: var(--text-muted); margin: 0 0 30px; font-size: 15px; }
+.welcome__actions { display: flex; justify-content: center; gap: 14px; }
+.welcome__actions .btn { min-width: 170px; padding: 18px 24px; font-size: 16px; border-radius: 12px; }
+.welcome__projects { text-align: left; margin: 24px auto 0; max-width: 390px; max-height: 300px; overflow-y: auto; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px; box-shadow: var(--shadow-sm); }
+@media (max-width: 420px) { .welcome__actions { flex-direction: column; } }

@@ -1,9 +1,11 @@
 import {
+  changeSprite,
+  saveDraft,
   animateSprite,
   checkHealth,
   deleteProject,
   generateSprite,
-  getCurrentProject,
+  setActiveProject,
   getImageModels,
   getVideoModels,
   listProjects,
@@ -61,6 +63,32 @@ export function mountApp(root: HTMLElement) {
   const saveBtn = root.querySelector<HTMLButtonElement>("#btn-save-project")!;
   const loadBtn = root.querySelector<HTMLButtonElement>("#btn-load-project")!;
   const loadMenu = root.querySelector<HTMLDivElement>("#load-menu")!;
+
+  const welcome = root.querySelector<HTMLElement>("#welcome")!;
+  const editor = root.querySelector<HTMLElement>("#editor")!;
+  const homeProjects = root.querySelector<HTMLElement>("#home-projects")!;
+  const homeNew = root.querySelector<HTMLButtonElement>("#home-new")!;
+  const homeOpen = root.querySelector<HTMLButtonElement>("#home-open")!;
+  const closeBtn = root.querySelector<HTMLButtonElement>("#btn-close-project")!;
+  homeNew.addEventListener("click", () => newBtn.click());
+  homeOpen.addEventListener("click", async () => {
+    homeProjects.hidden = !homeProjects.hidden;
+    if (!homeProjects.hidden) {
+      try { store.set({ savedProjects: await listProjects() }); }
+      catch (err) { toast(err instanceof Error ? err.message : "Could not open projects"); }
+    }
+  });
+  closeBtn.addEventListener("click", async () => {
+    store.set({ navigating: true });
+    try {
+      await persistDraft();
+      setActiveProject(null);
+      const state = store.get();
+      store.set({ ...createInitialState(), imageModels: state.imageModels, videoModels: state.videoModels,
+        savedProjects: await listProjects() });
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not close project"); }
+    finally { store.set({ navigating: false }); }
+  });
 
   // ---- Event handlers ----
   promptInput.addEventListener("input", () => {
@@ -170,8 +198,10 @@ export function mountApp(root: HTMLElement) {
       setStatus(framesStatus, "Select at least one frame to include.", "error");
       return;
     }
+    store.set({ previewGifBuilding: true });
     setStatus(framesStatus, `${spinner()}Composing spritesheet…`);
     try {
+      await persistDraft();
       const sheet = await composeSpritesheet({ frameSrcs: selected });
       store.set({
         spritesheetSrc: sheet.dataUrl,
@@ -206,6 +236,7 @@ export function mountApp(root: HTMLElement) {
         console.warn("[client] failed to persist spritesheet/gif", err);
       }
     } catch (err) {
+      store.set({ previewGifBuilding: false });
       const message = err instanceof Error ? err.message : "Failed to compose spritesheet";
       setStatus(framesStatus, message, "error");
     }
@@ -231,53 +262,39 @@ export function mountApp(root: HTMLElement) {
 
   // ---- New / Save / Load wiring ----
   newBtn.addEventListener("click", async () => {
-    const state = store.get();
-    const hasWork =
-      state.spriteSrc !== null ||
-      state.frames.length > 0 ||
-      state.spritePrompt.trim().length > 0 ||
-      state.motionPrompt.trim().length > 0;
-    if (hasWork && !window.confirm("Discard the current project and start fresh? Unsaved work will be lost.")) {
-      return;
-    }
+    const name = window.prompt("New project name (letters, numbers, hyphen or underscore):");
+    if (!name?.trim()) return;
+    store.set({ navigating: true });
     try {
-      const view = await newProject();
+      await persistBeforeNavigation();
+      const view = await newProject(name.trim());
       applyView(view);
       setStatus(spriteStatus, "", "info");
       setStatus(framesStatus, "", "info");
+      store.set({ savedProjects: await listProjects() });
       toast("Started a new project");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to start new project";
       toast(message);
-    }
+    } finally { store.set({ navigating: false }); }
   });
 
   saveBtn.addEventListener("click", async () => {
-    const suggested = store.get().currentProjectName === "latest" ? "" : store.get().currentProjectName;
-    const raw = window.prompt(
-      "Save project as (letters, numbers, hyphen, underscore — max 40 chars):",
-      suggested,
-    );
-    if (raw === null) return;
-    const name = raw.trim();
-    if (!name) return;
-
-    const existing = store.get().savedProjects.find((p) => p.name === name);
-    if (existing && !window.confirm(`Project '${name}' exists. Overwrite?`)) {
-      return;
-    }
-
+    const name = store.get().currentProjectName;
+    store.set({ navigating: true });
     try {
-      const view = await saveProject(name);
+      await persistDraft();
+      const view = await saveProject();
       store.set({
+        project: view.project,
         currentProjectName: view.name,
         savedProjects: await listProjects(),
       });
-      toast(`Saved as '${name}'`);
+      toast(`Saved '${name}'`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Save failed";
       toast(message);
-    }
+    } finally { store.set({ navigating: false }); }
   });
 
   loadBtn.addEventListener("click", async (e) => {
@@ -299,7 +316,7 @@ export function mountApp(root: HTMLElement) {
     }
   });
 
-  loadMenu.addEventListener("click", async (e) => {
+  const handleProjectClick = async (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     const item = target.closest<HTMLElement>("[data-load-name]");
     const del = target.closest<HTMLElement>("[data-delete-name]");
@@ -309,6 +326,10 @@ export function mountApp(root: HTMLElement) {
       const name = del.dataset.deleteName!;
       if (!window.confirm(`Delete saved project '${name}'? This can't be undone.`)) return;
       try {
+        if (store.get().currentProjectName === name) {
+          toast("Close this project before deleting it.");
+          return;
+        }
         await deleteProject(name);
         store.set({ savedProjects: await listProjects() });
         toast(`Deleted '${name}'`);
@@ -322,24 +343,62 @@ export function mountApp(root: HTMLElement) {
     if (item) {
       const name = item.dataset.loadName!;
       loadMenu.classList.remove("is-open");
+      store.set({ navigating: true });
       try {
+        await persistBeforeNavigation();
         const view = await loadProject(name);
         applyView(view);
         toast(`Loaded '${name}'`);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Load failed";
         toast(message);
-      }
+      } finally { store.set({ navigating: false }); }
     }
+  };
+  loadMenu.addEventListener("click", handleProjectClick);
+  homeProjects.addEventListener("click", handleProjectClick);
+
+  const spritePicker = root.querySelector<HTMLSelectElement>("#sprite-picker")!;
+  const addSpriteBtn = root.querySelector<HTMLButtonElement>("#btn-add-sprite")!;
+  const renameSpriteBtn = root.querySelector<HTMLButtonElement>("#btn-rename-sprite")!;
+  async function navigateSprite(action: "new" | "load" | "rename", value: string) {
+    store.set({ navigating: true });
+    try {
+      await persistDraft();
+      applyView(await changeSprite(action, value));
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not update sprite"); }
+    finally { store.set({ navigating: false }); }
+  }
+  spritePicker.addEventListener("change", () => { void navigateSprite("load", spritePicker.value); });
+  addSpriteBtn.addEventListener("click", () => {
+    const name = window.prompt("Sprite name:", `Sprite ${(store.get().project?.sprites.length ?? 0) + 1}`);
+    if (name?.trim()) void navigateSprite("new", name.trim());
   });
+  renameSpriteBtn.addEventListener("click", () => {
+    const project = store.get().project;
+    const name = window.prompt("Sprite name:", project?.sprites.find(s => s.id === project.activeSpriteId)?.name);
+    if (name?.trim()) void navigateSprite("rename", name.trim());
+  });
+  async function persistDraft() {
+    window.clearTimeout(selectionTimer);
+    await selectionPending;
+    const state = store.get();
+    await saveSelection([...state.selectedFrameIndices]);
+    await saveDraft({ spritePrompt: state.spritePrompt, motionPrompt: state.motionPrompt,
+      spriteModel: state.spriteModel, motionModel: state.motionModel });
+  }
+  async function persistBeforeNavigation() {
+    if (store.get().project) await persistDraft();
+  }
 
   // ---- Debounced selection persistence ----
+  let selectionPending: Promise<unknown> = Promise.resolve();
   let selectionTimer: number | undefined;
   function scheduleSelectionPersist() {
     if (selectionTimer) window.clearTimeout(selectionTimer);
     selectionTimer = window.setTimeout(() => {
       const indices = [...store.get().selectedFrameIndices].sort((a, b) => a - b);
-      saveSelection(indices).catch((err) => {
+      selectionPending = saveSelection(indices).catch((err) => {
         console.warn("[client] failed to persist selection", err);
       });
     }, SELECTION_DEBOUNCE_MS);
@@ -347,7 +406,10 @@ export function mountApp(root: HTMLElement) {
 
   // ---- Apply a server view into local state ----
   function applyView(view: import("./lib/api").ProjectView) {
-    const patch = hydrateFromView(view);
+    setStatus(spriteStatus, "");
+    setStatus(framesStatus, "");
+    setActiveProject(view);
+    const patch = { ...hydrateFromView(view), status: "idle" as const, errorMessage: null };
     store.set(patch);
     promptInput.value = view.spritePrompt;
     motionInput.value = view.motionPrompt;
@@ -359,10 +421,24 @@ export function mountApp(root: HTMLElement) {
   // ---- Render reactivity ----
   store.subscribe((state) => {
     const busy =
+      state.navigating || state.previewGifBuilding ||
       state.status === "generating-image" ||
       state.status === "generating-video" ||
       state.status === "extracting-frames";
 
+    welcome.hidden = !!state.project;
+    editor.hidden = !state.project;
+    for (const button of [homeNew, homeOpen, closeBtn, newBtn, saveBtn, loadBtn, addSpriteBtn, renameSpriteBtn]) button.disabled = busy;
+    spritePicker.disabled = busy;
+    promptInput.disabled = busy;
+    motionInput.disabled = busy;
+    motionModelSelect.disabled = busy;
+    loadMenu.inert = busy;
+    framesGrid.inert = busy;
+    const project = state.project;
+    spritePicker.innerHTML = (project?.sprites ?? [{ id: "sprite-1", name: "Sprite 1" }])
+      .map(s => `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)}</option>`).join("");
+    spritePicker.value = project?.activeSpriteId ?? "sprite-1";
     generateSpriteBtn.disabled = busy;
     spriteModelSelect.disabled = busy;
     generateFramesBtn.disabled = busy || !state.spriteSrc;
@@ -400,10 +476,10 @@ export function mountApp(root: HTMLElement) {
       gifPreview.innerHTML = `<span class="gif-preview__placeholder">Generate a spritesheet to see the animation</span>`;
     }
 
-    projectLabel.textContent =
-      state.currentProjectName === "latest" ? "untitled" : state.currentProjectName;
+    projectLabel.textContent = state.currentProjectName;
 
     loadMenu.innerHTML = renderLoadMenu(state.savedProjects);
+    homeProjects.innerHTML = renderLoadMenu(state.savedProjects);
 
     // Re-render the model select only when the list changes (avoid clobbering user input mid-edit)
     const imageOptionsKey = state.imageModels.map((m) => `${m.id}|${m.label}`).join(",");
@@ -432,13 +508,13 @@ export function mountApp(root: HTMLElement) {
   // ---- Boot ----
   Promise.all([
     checkHealth(),
-    getCurrentProject(),
     listProjects(),
     getImageModels(),
     getVideoModels(),
   ])
-    .then(([health, view, projects, imageModelsResp, videoModelsResp]) => {
+    .then(([health, projects, imageModelsResp, videoModelsResp]) => {
       if (!health.hasApiKey) {
+        toast("OPENROUTER_API_KEY is missing. Add it to .env before generating assets.");
         setStatus(
           spriteStatus,
           "OPENROUTER_API_KEY is missing on the server. Add it to .env and restart.",
@@ -450,10 +526,10 @@ export function mountApp(root: HTMLElement) {
         imageModels: [...imageModelsResp.models],
         videoModels: [...videoModelsResp.models],
       });
-      applyView(view);
     })
     .catch((err) => {
       console.error("[client] boot failed", err);
+      toast("Backend not reachable. Start the server and refresh to try again.");
       setStatus(spriteStatus, "Backend not reachable.", "error");
     });
 }
@@ -526,7 +602,19 @@ function escapeAttr(s: string): string {
 
 function renderShell(): string {
   return `
-    <div class="app">
+    <section id="welcome" class="welcome">
+      <div class="welcome__content">
+        <span class="welcome__eyebrow">AI Game Studio</span>
+        <h1>Bring your next game to life.</h1>
+        <p>Create a project to keep your sprites and animations together.</p>
+        <div class="welcome__actions">
+          <button id="home-new" class="btn btn--primary" type="button">${plusIcon} New Project</button>
+          <button id="home-open" class="btn btn--secondary" type="button">${folderIcon} Open</button>
+        </div>
+        <div id="home-projects" class="welcome__projects" aria-label="Saved projects" hidden></div>
+      </div>
+    </section>
+    <div id="editor" class="app" hidden>
       <header class="app-header">
         <div class="app-header__brand">
           <span class="app-header__logo">
@@ -535,31 +623,38 @@ function renderShell(): string {
             <span></span><span></span><span></span>
           </span>
           <span class="app-header__title">Sprite Sheet Builder</span>
-          <span class="app-header__project">· <span id="project-label">untitled</span></span>
+          <span class="app-header__project">· <span id="project-label"></span></span>
         </div>
 
         <div class="app-header__actions">
           <button id="btn-new-project" class="btn btn--secondary btn--sm" type="button">
             ${plusIcon}
-            New
+            New project
           </button>
           <div class="load-menu-wrap">
             <button id="btn-load-project" class="btn btn--secondary btn--sm" type="button">
               ${folderIcon}
-              Load
+              Open
               ${chevronIcon}
             </button>
             <div id="load-menu" class="load-menu"></div>
           </div>
           <button id="btn-save-project" class="btn btn--secondary btn--sm" type="button">
             ${saveIcon}
-            Save
+            Save project
           </button>
-          <button class="app-header__help" type="button" aria-label="Help">?</button>
+          <button id="btn-close-project" class="btn btn--secondary btn--sm" type="button">Close project</button>
         </div>
       </header>
 
       <main class="app-main">
+        <nav class="sprite-toolbar" aria-label="Project sprites">
+          <label for="sprite-picker">Sprites</label>
+          <select id="sprite-picker" class="select"></select>
+          <button id="btn-rename-sprite" class="btn btn--secondary btn--sm" type="button">Rename</button>
+          <button id="btn-add-sprite" class="btn btn--secondary btn--sm" type="button">${plusIcon} Add sprite</button>
+          <span>Each sprite has its own frames and spritesheet</span>
+        </nav>
         <div class="columns">
 
           <section class="card">

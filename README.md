@@ -38,14 +38,14 @@ This starts Vite (frontend, :5173) and an Express server (backend, :8787) togeth
 
 ## Using it
 
-1. Pick an image model and type a sprite prompt in column 1 → **Generate Reference Sprite**.
+1. Choose **New Project** or **Open** on the start screen, then pick an image model and type a sprite prompt in column 1 → **Generate Reference Sprite**.
 2. Pick a video model and type a motion prompt in column 2 → **Generate Frames** (calls image-to-video via OpenRouter, polls until done, extracts transparent PNGs).
 3. Click frame tiles to toggle which ones to include.
 4. **Generate Spritesheet** → composes a 1×N PNG client-side, builds a looping GIF preview server-side.
 5. **Export PNG** to download the spritesheet.
-6. Header: **New** to start fresh, **Save** to name and snapshot the current project, **Load** to switch to a saved one.
+6. Use **Add sprite** to expand the collection, **Save project** to save draft edits, and **Close project** to return to the start screen.
 
-Generated artifacts live under `projects/` (gitignored). The current working state is always in `projects/latest/`.
+Projects live under `~/.ai-game-studio/`, outside the source checkout. Installation creates this directory; the server also creates it if missing. Set `AI_GAME_STUDIO_HOME` to override the storage directory (set it in your shell before installation, or in `.env` for the server).
 
 ## Example prompts
 
@@ -84,3 +84,36 @@ Tips:
 ## More
 
 See [AGENTS.md](AGENTS.md) for the full spec, architecture, endpoint list, model-registry pattern, and chroma-key tuning notes.
+
+## Projects and sprites
+
+Use **New project** to create a named collection. The **Sprites** picker above the
+builder switches between sprites; **Add sprite** starts another and **Rename**
+changes its display name. Each sprite retains its own prompts, models, reference,
+selected frames, spritesheet, and GIF. Switching sprites preserves draft prompts
+and selections. **Save project** saves the entire collection. Opening or creating
+another project first saves the current named collection.
+
+Each saved directory contains a JSON `.project` file:
+
+```json
+{
+  "version": 1,
+  "name": "my-game",
+  "activeSpriteId": "sprite-1",
+  "sprites": [
+    { "id": "sprite-1", "name": "Hero", "path": "sprites/sprite-1/sprite.json" }
+  ]
+}
+```
+
+Sprite artifacts are stored directly in `~/.ai-game-studio/<project>/sprites/<id>/`.
+There is no shared working copy or snapshot step. Generated assets and frame
+selections persist in place. **Save project**, sprite switching, and closing a
+project also save the current draft prompts and model choices. All paths in
+`.project` are relative to the project directory. App startup always shows the
+start screen; choose **Open** to resume a project.
+
+The previous repository-local `projects/` directory is not modified by this change.
+
+Run persistence regression checks with `node --import tsx --test tests/*.test.ts`.
