@@ -17,6 +17,8 @@ export type AppStatus =
   | "error";
 
 export interface AppState {
+  project: ProjectView["project"] | null;
+  navigating: boolean;
   status: AppStatus;
   errorMessage: string | null;
   spritePrompt: string;
@@ -39,6 +41,8 @@ export interface AppState {
 
 export function createInitialState(): AppState {
   return {
+    project: null,
+    navigating: false,
     status: "idle",
     errorMessage: null,
     spritePrompt: "",
@@ -55,7 +59,7 @@ export function createInitialState(): AppState {
     spritesheetCols: null,
     previewGifSrc: null,
     previewGifBuilding: false,
-    currentProjectName: "latest",
+    currentProjectName: "",
     savedProjects: [],
   };
 }
@@ -69,6 +73,7 @@ export function cacheBust(url: string | null, key: string): string | null {
 export function hydrateFromView(view: ProjectView): Partial<AppState> {
   const v = view.updatedAt;
   return {
+    project: view.project,
     spritePrompt: view.spritePrompt,
     spriteModel: view.spriteModel || DEFAULT_IMAGE_MODEL,
     motionPrompt: view.motionPrompt,

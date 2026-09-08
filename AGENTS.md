@@ -1,5 +1,19 @@
 # AGENTS.md
 
+## Current project storage and startup
+
+The project implementation now supersedes the older working-copy/snapshot details below:
+
+- Startup shows a centered **New Project** / **Open** screen; do not auto-open a project.
+- Store projects in `$HOME/.ai-game-studio/<name>/` by default. `AI_GAME_STUDIO_HOME` overrides the storage root.
+- `npm install` creates the storage directory via `scripts/install.ts`; the server also ensures it exists.
+- Each project has a versioned JSON `.project` manifest and `sprites/<id>/sprite.json` plus that sprite's artifacts.
+- Edit sprites directly in their own directories. There is no `latest` directory, shared working copy, or snapshot copy on Save/Open.
+- API requests identify their project and sprite through `X-Project-Name` / `X-Sprite-Id`, scoped with AsyncLocalStorage.
+- Validate generated paths against the configured storage root, while extraction scripts still live in the source checkout.
+- Save, sprite switching, and Close project persist draft prompts and selections. Close returns to the start screen.
+- Run `npm run build` and `node --import tsx --test tests/*.test.ts` for project-storage changes.
+
 ## Project
 
 A lightweight web app — and the seed of a larger AI Game Studio — for generating 2D game assets from text prompts. Today: reference sprites and animation frames composed into a 1×N spritesheet with a looping animated preview. The app uses [OpenRouter](https://openrouter.ai) as the single boundary to the model providers, which gives access to 300+ image / video / audio / text models behind one API key. New asset types (backgrounds, tilemaps, SFX, music, voice) plug into the same pattern.

@@ -1,11 +1,24 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { PROJECTS_DIR } from "./storage.js";
+export { PROJECTS_DIR } from "./storage.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT_DIR = path.resolve(__dirname, "..");
-export const PROJECTS_DIR = path.join(ROOT_DIR, "projects");
-export const LATEST_DIR = path.join(PROJECTS_DIR, "latest");
+export const projectContext = new AsyncLocalStorage<{ name: string; spriteId: string }>();
+export function currentProjectName(): string {
+  const context = projectContext.getStore();
+  if (!context) throw new Error("Open or create a project first");
+  return context.name;
+}
+export function activeSpriteDir(): string {
+  const context = projectContext.getStore();
+  if (!context) throw new Error("Open or create a project first");
+  safeProjectName(context.spriteId);
+  return path.join(projectDir(context.name), "sprites", context.spriteId);
+}
 
 export const PROJECT_FILES = {
   manifest: "sprite.json",
@@ -24,14 +37,14 @@ export function safeProjectName(name: string): string {
       "invalid project name (use letters, numbers, hyphen, underscore — up to 40 chars)",
     );
   }
-  if (name === "latest") {
-    throw new Error("'latest' is reserved");
-  }
   return name;
 }
 
 export function projectDir(name: string): string {
-  return path.join(PROJECTS_DIR, name);
+  safeProjectName(name);
+  const dir = path.join(PROJECTS_DIR, name);
+  ensureInsideRoot(dir);
+  return dir;
 }
 
 export async function saveBase64Image(base64: string, outputPath: string): Promise<void> {
@@ -65,7 +78,7 @@ export function readPngDims(buf: Buffer): { w: number; h: number } | null {
 
 export function ensureInsideRoot(absolutePath: string): void {
   const resolved = path.resolve(absolutePath);
-  if (!resolved.startsWith(ROOT_DIR + path.sep) && resolved !== ROOT_DIR) {
-    throw new Error("path outside project root");
+  if (!resolved.startsWith(PROJECTS_DIR + path.sep) && resolved !== PROJECTS_DIR) {
+    throw new Error("path outside project storage");
   }
 }

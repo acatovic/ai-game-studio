@@ -1,4 +1,6 @@
 import "dotenv/config";
+import { initializeStorage } from "./storage.js";
+await initializeStorage();
 import express, { type Request, type Response, type NextFunction } from "express";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
@@ -19,10 +21,11 @@ import {
 import { extractFrames } from "./extract-frames.js";
 import { buildPreviewGif } from "./build-gif.js";
 import {
-  LATEST_DIR,
+  activeSpriteDir,
   PROJECTS_DIR,
   PROJECT_FILES,
-  ROOT_DIR,
+  projectContext,
+  safeProjectName,
   downloadVideo,
   ensureInsideRoot,
   readPngDims,
@@ -31,23 +34,42 @@ import {
 } from "./files.js";
 import {
   deleteSavedProject,
-  emptyManifest,
+  createProject,
+  changeSprite,
   listSavedProjects,
-  loadProjectIntoLatest,
+  openProject,
   readManifest,
-  saveLatestAs,
+
   toView,
-  updateLatest,
-  wipeLatestFramesAndSheet,
-  wipeLatestSpritesheet,
+  updateSprite,
+  wipeFramesAndSheet,
+  wipeSpritesheet,
 } from "./projects.js";
-import { rm } from "node:fs/promises";
+
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HAS_KEY = Boolean(process.env.OPENROUTER_API_KEY);
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
+let mutating = false;
+app.use("/api", (req, res, next) => {
+  if (req.method !== "POST") return next();
+  if (mutating) { res.status(409).json({ error: "Another operation is in progress. Please try again." }); return; }
+  mutating = true;
+  res.once("finish", () => { mutating = false; });
+  next();
+});
+app.use("/api", (req, res, next) => {
+  const name = req.get("X-Project-Name");
+  const spriteId = req.get("X-Sprite-Id");
+  if (!name && !spriteId) return next();
+  try {
+    safeProjectName(name ?? "");
+    safeProjectName(spriteId ?? "");
+    projectContext.run({ name: name!, spriteId: spriteId! }, next);
+  } catch (err) { handleError(err, res); }
+});
 app.use("/projects", express.static(PROJECTS_DIR, { fallthrough: false }));
 
 function requireKey(_req: Request, res: Response, next: NextFunction) {
@@ -90,7 +112,7 @@ app.get("/api/models/image", (_req, res) => {
 
 app.get("/api/projects/current", async (_req, res) => {
   try {
-    res.json(toView(await readManifest("latest")));
+    res.json(toView(await readManifest()));
   } catch (err) {
     handleError(err, res);
   }
@@ -104,10 +126,9 @@ app.get("/api/projects", async (_req, res) => {
   }
 });
 
-app.post("/api/projects/save", async (req, res) => {
+app.post("/api/projects/save", async (_req, res) => {
   try {
-    const name = asString(req.body?.name, "name", 40);
-    res.json(await saveLatestAs(name));
+    res.json(await updateSprite({}).then(toView));
   } catch (err) {
     handleError(err, res);
   }
@@ -116,21 +137,35 @@ app.post("/api/projects/save", async (req, res) => {
 app.post("/api/projects/load", async (req, res) => {
   try {
     const name = asString(req.body?.name, "name", 40);
-    res.json(await loadProjectIntoLatest(name));
+    res.json(await openProject(name));
   } catch (err) {
     handleError(err, res);
   }
 });
 
-app.post("/api/projects/new", async (_req, res) => {
+app.post("/api/projects/new", async (req, res) => {
+  try { res.json(await createProject(asString(req.body?.name, "name", 40))); }
+  catch (err) { handleError(err, res); }
+});
+
+app.post("/api/projects/sprites/:action", async (req, res) => {
   try {
-    if (existsSync(LATEST_DIR)) {
-      await rm(LATEST_DIR, { recursive: true, force: true });
+    const action = req.params.action;
+    if (action !== "new" && action !== "load" && action !== "rename") throw new Error("Unknown sprite action");
+    res.json(await changeSprite(action, asString(req.body?.value, "value", 60)));
+  } catch (err) { handleError(err, res); }
+});
+
+app.post("/api/projects/draft", async (req, res) => {
+  try {
+    const patch: Record<string, string> = {};
+    for (const key of ["spritePrompt", "motionPrompt", "spriteModel", "motionModel"]) {
+      const value = req.body?.[key];
+      if (typeof value !== "string" || value.length > 2000) throw new Error("Invalid sprite draft");
+      patch[key] = value;
     }
-    res.json(toView(emptyManifest("latest")));
-  } catch (err) {
-    handleError(err, res);
-  }
+    res.json(toView(await updateSprite(patch)));
+  } catch (err) { handleError(err, res); }
 });
 
 app.post("/api/projects/delete", async (req, res) => {
@@ -149,7 +184,7 @@ app.post("/api/projects/selection", async (req, res) => {
     if (!Array.isArray(indices) || indices.some((i) => typeof i !== "number")) {
       throw new Error("selectedIndices must be an array of numbers");
     }
-    const m = await updateLatest({ selectedFrameIndices: indices });
+    const m = await updateSprite({ selectedFrameIndices: indices });
     res.json(toView(m));
   } catch (err) {
     handleError(err, res);
@@ -158,20 +193,21 @@ app.post("/api/projects/selection", async (req, res) => {
 
 app.post("/api/projects/spritesheet", async (req, res) => {
   try {
+    await readManifest();
     const dataUrl = asString(req.body?.dataUrl, "dataUrl", 50_000_000);
-    const spritesheetAbs = path.join(LATEST_DIR, PROJECT_FILES.spritesheet);
+    const spritesheetAbs = path.join(activeSpriteDir(), PROJECT_FILES.spritesheet);
     await saveDataUrlPng(dataUrl, spritesheetAbs);
 
-    let m = await updateLatest({ spritesheet: PROJECT_FILES.spritesheet });
+    let m = await updateSprite({ spritesheet: PROJECT_FILES.spritesheet });
 
     // Best-effort GIF build from current selection
     try {
       const gifName = await buildPreviewGif(m.selectedFrameIndices);
-      m = await updateLatest({ previewGif: gifName });
+      m = await updateSprite({ previewGif: gifName });
     } catch (gifErr) {
       const msg = gifErr instanceof Error ? gifErr.message : String(gifErr);
       console.warn("[api] preview gif build failed:", msg);
-      m = await updateLatest({ previewGif: null });
+      m = await updateSprite({ previewGif: null });
     }
 
     res.json(toView(m));
@@ -182,6 +218,7 @@ app.post("/api/projects/spritesheet", async (req, res) => {
 
 app.post("/api/sprites/generate", requireKey, async (req, res) => {
   try {
+    await readManifest();
     const prompt = asString(req.body?.prompt, "prompt");
     const requestedModel = req.body?.model;
     if (requestedModel !== undefined && !isImageModelId(requestedModel)) {
@@ -191,14 +228,14 @@ app.post("/api/sprites/generate", requireKey, async (req, res) => {
     const base64 = await generateSpriteImage(prompt, model);
 
     // Reset downstream artifacts (frames + spritesheet) before writing the new sprite
-    await wipeLatestFramesAndSheet();
+    await wipeFramesAndSheet();
 
-    const refAbs = path.join(LATEST_DIR, PROJECT_FILES.ref);
+    const refAbs = path.join(activeSpriteDir(), PROJECT_FILES.ref);
     await saveBase64Image(base64, refAbs);
     const buf = await readFile(refAbs);
     const dims = readPngDims(buf);
 
-    const m = await updateLatest({
+    const m = await updateSprite({
       spritePrompt: prompt,
       spriteModel: model,
       sprite: PROJECT_FILES.ref,
@@ -220,6 +257,7 @@ app.post("/api/sprites/generate", requireKey, async (req, res) => {
 
 app.post("/api/sprites/animate", requireKey, async (req, res) => {
   try {
+    await readManifest();
     const image = asImageRef(req.body?.image);
     const text = asString(req.body?.text, "text");
     const model = isVideoModelId(req.body?.model) ? req.body.model : DEFAULT_VIDEO_MODEL;
@@ -228,17 +266,17 @@ app.post("/api/sprites/animate", requireKey, async (req, res) => {
 
     const imageInput = await resolveImageInput(image);
 
-    await wipeLatestSpritesheet();
+    await wipeSpritesheet();
 
     const video = await generateSpriteMotionVideo(imageInput, text, duration, model);
-    const videoAbs = path.join(LATEST_DIR, PROJECT_FILES.source);
+    const videoAbs = path.join(activeSpriteDir(), PROJECT_FILES.source);
     await downloadVideo(video.url, videoAbs, video.headers);
 
-    const framesAbs = path.join(LATEST_DIR, PROJECT_FILES.framesDir);
+    const framesAbs = path.join(activeSpriteDir(), PROJECT_FILES.framesDir);
     const frameFiles = await extractFrames(videoAbs, framesAbs);
     const frames = frameFiles.map((f) => `${PROJECT_FILES.framesDir}/${f}`);
 
-    const m = await updateLatest({
+    const m = await updateSprite({
       motionPrompt: text,
       motionModel: model,
       frames,
@@ -257,7 +295,7 @@ async function resolveImageInput(image: string): Promise<string> {
   if (image.startsWith("data:")) return image;
   if (image.startsWith("/projects/")) {
     const cleanPath = image.split("?")[0];
-    const abs = path.join(ROOT_DIR, cleanPath.replace(/^\//, ""));
+    const abs = path.join(PROJECTS_DIR, cleanPath.slice("/projects/".length));
     ensureInsideRoot(abs);
     if (!existsSync(abs)) throw new Error("sprite image not found on disk");
     const buf = await readFile(abs);
@@ -278,8 +316,10 @@ function redact(msg: string): string {
   return msg.replace(/sk-or-[A-Za-z0-9_-]+/g, "***");
 }
 
-app.listen(PORT, () => {
-  console.log(`[server] listening on http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : PORT;
+  console.log(`[server] listening on http://localhost:${port}`);
   if (!HAS_KEY) {
     console.warn("[server] WARNING: OPENROUTER_API_KEY is missing — endpoints will return 500");
   }
