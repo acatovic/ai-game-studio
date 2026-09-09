@@ -1,119 +1,57 @@
 # AI Game Studio
 
-A local web app — and the start of a fuller AI Game Studio — for generating game assets from text prompts. Today: 2D reference sprites and animation frames composed into a 1×N spritesheet with a looping animated preview. Backgrounds are chroma-keyed to transparency automatically, so frames drop straight into a game engine. Projects can be saved and loaded by name.
+Create named characters and animations from text prompts. Generate a shared character reference, then create walking, idle, and other animations with automatically saved PNG and Aseprite files. Model calls go through OpenRouter.
 
-The app talks to [OpenRouter](https://openrouter.ai) as the single boundary to the model providers. One key gives access to 300+ image / video / audio / text models, which is the runway for everything on the TO-DO list (backgrounds, tilemaps, SFX, music, voice, …).
+## Setup
 
-Pick both image and video models at generation time. Image options are **OpenAI GPT Image 2** (default) and **xAI Grok Imagine Image 2.0**; video options are **Grok Imagine Video** (xAI), **MiniMax H3**, and **Seedance 2.0** (ByteDance). All generation is routed through OpenRouter.
-
-![Mockup](mockup.png)
-
-Full Demo: https://www.youtube.com/watch?v=MijheSPXnDo
-
-## Requirements
-
-- Node 20+
-- `ffmpeg` on `PATH`
-- An [OpenRouter API key](https://openrouter.ai/keys)
-
-## Install
+Requires Node.js 20+, `ffmpeg` on your PATH, and an [OpenRouter API key](https://openrouter.ai/keys).
 
 ```bash
 npm install
-
 cp .env.example .env
-# then open .env and paste your key:
-# OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-## Run
+Set `OPENROUTER_API_KEY` in `.env`, then run:
 
 ```bash
 npm run dev
 ```
 
-Open http://localhost:5173.
+Open [localhost:5173](http://localhost:5173).
 
-This starts Vite (frontend, :5173) and an Express server (backend, :8787) together. Stop with `Ctrl+C`.
+## Create assets
 
-## Using it
+1. Choose **New Project** or **Open**.
+2. Click **Add character**, name it (e.g. `scientist-male`), enter a prompt, and click **Generate Character**.
+3. Click **Add animation**, name it (e.g. `idle`), describe the motion, and click **Generate Animation**. PNG and Aseprite files save automatically.
+4. Toggle frames to refine the animation, then click **Update Spritesheet** to rebuild both files.
 
-1. Choose **New Project** or **Open** on the start screen, then pick an image model and type a sprite prompt in column 1 → **Generate Reference Sprite**.
-2. Pick a video model and type a motion prompt in column 2 → **Generate Frames** (calls image-to-video via OpenRouter, polls until done, extracts transparent PNGs).
-3. Click frame tiles to toggle which ones to include.
-4. **Generate Spritesheet** → composes a 1×N PNG client-side, builds a looping GIF preview server-side.
-5. **Export PNG** to download the spritesheet.
-6. Use **Add sprite** to expand the collection, **Save project** to save draft edits, and **Close project** to return to the start screen.
+Each character can have multiple animations. **Rename** updates folders and filenames. **Save project** saves draft prompts; switching characters, animations, or closing the project also saves drafts.
 
-Projects live under `~/.ai-game-studio/`, outside the source checkout. Installation creates this directory; the server also creates it if missing. Set `AI_GAME_STUDIO_HOME` to override the storage directory (set it in your shell before installation, or in `.env` for the server).
+## Find and view your assets
 
-## Example prompts
+Projects live in `~/.ai-game-studio/`, outside this repository. Set `AI_GAME_STUDIO_HOME` to use another location.
 
-### Sprite prompts
-
-- `A pixel-art knight in silver armor with a longsword, side-view, full body, simple flat colors, standing pose`
-- `Female ninja with red scarf, dynamic side-view, 2D sprite, anime style`
-- `Cute green slime monster, side-view, big eyes, soft shading`
-- `Cyberpunk hacker in a hoodie, glowing visor, side-view full body, gritty style`
-
-### Motion prompts
-
-- `Smooth walk cycle, side-view, no head tilting, no camera movement`
-- `Sword slash attack, side-view, fast, no shadows`
-- `Idle breathing animation, subtle, looping`
-- `Jump arc — crouch, leap, mid-air, land`
-
-Tips:
-- Keep motion prompts focused on the action. Phrases like *"no camera movement"*, *"side-view"*, and *"no head tilting"* help keep frames game-ready.
-- Switching the image model is one entry in `server/image.ts` — see `IMAGE_MODELS`.
-- Per-model default durations: Grok Imagine Video = 2 s, MiniMax H3 = 5 s, Seedance 2.0 = 4 s. ~24–30 fps on the source clip, so trim with the frame selector before composing.
-- Switching the model is one entry in `server/video.ts` — see `VIDEO_MODELS`.
-- Recommend sticking to Grok Imagine Video since it's much cheaper than Seedance 2
-
-## TO-DO
-
-- [ ] Background generation
-- [ ] Tilemap generation
-- [ ] Aseprite format export
-- [ ] Tiled format export
-- [ ] SFX generation
-- [ ] Music generation
-- [ ] Voice generation
-- [ ] Full asset scaffolding export
-
-## More
-
-See [AGENTS.md](AGENTS.md) for the full spec, architecture, endpoint list, model-registry pattern, and chroma-key tuning notes.
-
-## Projects and sprites
-
-Use **New project** to create a named collection. The **Sprites** picker above the
-builder switches between sprites; **Add sprite** starts another and **Rename**
-changes its display name. Each sprite retains its own prompts, models, reference,
-selected frames, spritesheet, and GIF. Switching sprites preserves draft prompts
-and selections. **Save project** saves the entire collection. Opening or creating
-another project first saves the current named collection.
-
-Each saved directory contains a JSON `.project` file:
-
-```json
-{
-  "version": 1,
-  "name": "my-game",
-  "activeSpriteId": "sprite-1",
-  "sprites": [
-    { "id": "sprite-1", "name": "Hero", "path": "sprites/sprite-1/sprite.json" }
-  ]
-}
+```text
+~/.ai-game-studio/<project>/
+└── sprites/scientist-male/
+    ├── scientist-male.png          # Character reference
+    ├── sprite.json
+    └── animations/idle/
+        ├── animation.json         # Paths to the current saved files
+        ├── preview.gif
+        ├── assets/<revision>/
+        │   ├── idle.png
+        │   └── idle.aseprite
+        └── runs/<run>/             # Source video and extracted frames
 ```
 
-Sprite artifacts are stored directly in `~/.ai-game-studio/<project>/sprites/<id>/`.
-There is no shared working copy or snapshot step. Generated assets and frame
-selections persist in place. **Save project**, sprite switching, and closing a
-project also save the current draft prompts and model choices. All paths in
-`.project` are relative to the project directory. App startup always shows the
-start screen; choose **Open** to resume a project.
+On macOS, press **Cmd+Shift+G** in Finder and enter `~/.ai-game-studio/`.
 
-The previous repository-local `projects/` directory is not modified by this change.
+**To find the current animation files**, open its `animation.json` and look for `spritesheet` and `aseprite`. Those paths are relative to the character folder (`sprites/scientist-male/` in this example). Each update creates a new revision folder; older copies remain and may have different frame counts. Use the manifest paths rather than picking a revision folder at random.
 
-Run persistence regression checks with `node --import tsx --test tests/*.test.ts`.
+- **In the app:** select the character and animation to view the current spritesheet and looping preview.
+- **PNG:** open in an image viewer or import into your game engine. It is a horizontal strip of 128×128 frames.
+- **Aseprite:** open in Aseprite to edit the same frames as an animation at approximately 12 fps.
+
+[Watch the demo](https://www.youtube.com/watch?v=MijheSPXnDo). See [AGENTS.md](AGENTS.md) for implementation details.

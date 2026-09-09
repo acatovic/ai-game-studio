@@ -5,7 +5,7 @@ import type {
   VideoModelOption,
 } from "./api";
 
-export const DEFAULT_IMAGE_MODEL = "openai/gpt-image-2";
+export const DEFAULT_IMAGE_MODEL = "openai/gpt-image-2.5-flare";
 export const DEFAULT_VIDEO_MODEL = "x-ai/grok-imagine-video";
 
 export type AppStatus =
@@ -19,6 +19,9 @@ export type AppStatus =
 export interface AppState {
   project: ProjectView["project"] | null;
   navigating: boolean;
+  activeAnimationId: string;
+  animations: { id: string; name: string }[];
+  asepriteSrc: string | null;
   status: AppStatus;
   errorMessage: string | null;
   spritePrompt: string;
@@ -43,6 +46,9 @@ export function createInitialState(): AppState {
   return {
     project: null,
     navigating: false,
+    activeAnimationId: "",
+    animations: [],
+    asepriteSrc: null,
     status: "idle",
     errorMessage: null,
     spritePrompt: "",
@@ -74,6 +80,9 @@ export function hydrateFromView(view: ProjectView): Partial<AppState> {
   const v = view.updatedAt;
   return {
     project: view.project,
+    activeAnimationId: view.activeAnimationId,
+    animations: view.animations,
+    asepriteSrc: cacheBust(view.asepriteUrl, v),
     spritePrompt: view.spritePrompt,
     spriteModel: view.spriteModel || DEFAULT_IMAGE_MODEL,
     motionPrompt: view.motionPrompt,
@@ -83,7 +92,7 @@ export function hydrateFromView(view: ProjectView): Partial<AppState> {
     frames: view.frames.map((f) => cacheBust(f, v)!),
     selectedFrameIndices: new Set(view.selectedFrameIndices),
     spritesheetSrc: cacheBust(view.spritesheetUrl, v),
-    spritesheetCols: view.spritesheetUrl ? view.selectedFrameIndices.length : null,
+    spritesheetCols: view.spritesheetUrl ? view.spritesheetFrameCount : null,
     previewGifSrc: cacheBust(view.previewGifUrl, v),
     previewGifBuilding: false,
     currentProjectName: view.name,

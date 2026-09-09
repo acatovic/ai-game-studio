@@ -1,5 +1,8 @@
 export interface ProjectView {
   project: { version: 1; name: string; activeSpriteId: string; sprites: { id: string; name: string; path: string }[] };
+  activeAnimationId: string;
+  animations: { id: string; name: string }[];
+  asepriteUrl: string | null;
   name: string;
   spritePrompt: string;
   spriteModel: string;
@@ -10,6 +13,7 @@ export interface ProjectView {
   frames: string[];
   selectedFrameIndices: number[];
   spritesheetUrl: string | null;
+  spritesheetFrameCount: number | null;
   previewGifUrl: string | null;
   updatedAt: string;
 }
@@ -45,12 +49,16 @@ export interface GenerateSpriteResponse {
   dataUrl: string;
 }
 
-let activeProject: { name: string; spriteId: string } | null = null;
+let activeProject: { name: string; spriteId: string; animationId: string } | null = null;
 export function setActiveProject(view: ProjectView | null): void {
-  activeProject = view ? { name: view.name, spriteId: view.project.activeSpriteId } : null;
+  activeProject = view ? { name: view.name, spriteId: view.project.activeSpriteId, animationId: view.activeAnimationId } : null;
 }
 function contextHeaders(): Record<string, string> {
-  return activeProject ? { "X-Project-Name": activeProject.name, "X-Sprite-Id": activeProject.spriteId } : {};
+  if (!activeProject) return {};
+  return { "X-Project-Name": activeProject.name,
+    ...(activeProject.spriteId ? { "X-Sprite-Id": activeProject.spriteId } : {}),
+    ...(activeProject.animationId ? { "X-Animation-Id": activeProject.animationId } : {}) };
+
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
@@ -140,4 +148,8 @@ export function changeSprite(action: "new" | "load" | "rename", value: string): 
 }
 export function saveDraft(draft: { spritePrompt: string; motionPrompt: string; spriteModel: string; motionModel: string }): Promise<ProjectView> {
   return postJson("/api/projects/draft", draft);
+}
+
+export function changeAnimation(action: "new" | "load" | "rename", value: string): Promise<ProjectView> {
+  return postJson(`/api/projects/animations/${action}`, { value });
 }
