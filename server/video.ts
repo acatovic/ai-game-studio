@@ -7,6 +7,8 @@
 // fall back to the authenticated content endpoint and inline the auth via a query param —
 // see resolveDownloadableUrl below.
 
+import { prepareVideoReference } from "./video-reference.js";
+
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
 export const VIDEO_MODELS = [
@@ -34,7 +36,11 @@ const CHROMA_DIRECTIVE =
   "Maintain the exact same flat solid pure chroma green background, " +
   "hex #00b140, throughout the entire clip. No background changes, no " +
   "environmental elements, no shadows on the background, no camera movement. " +
-  "The subject animates against the uniform green backdrop.";
+  "The subject animates against the uniform green backdrop. " +
+  "Preserve the reference character's exact design, proportions, colors and pixel-art style. " +
+  "Keep the full character visible with consistent scale and framing. " +
+  "Perform only the requested movement; do not add motion or morph the character. " +
+  "Create a seamless cycle with matching starting and ending poses.";
 
 type JobStatus =
   | "pending"
@@ -72,6 +78,7 @@ export async function generateSpriteMotionVideo(
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
 
   const fullText = `${text.trim()}\n\n${CHROMA_DIRECTIVE}`;
+  const videoReference = await prepareVideoReference(image);
 
   const submitRes = await fetch(`${OPENROUTER_BASE}/videos`, {
     method: "POST",
@@ -86,7 +93,7 @@ export async function generateSpriteMotionVideo(
       input_references: [
         {
           type: "image_url",
-          image_url: { url: image },
+          image_url: { url: videoReference },
         },
       ],
     }),
