@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT_DIR = path.resolve(__dirname, "..");
-export const projectContext = new AsyncLocalStorage<{ name: string; spriteId: string }>();
+export const projectContext = new AsyncLocalStorage<{ name: string; spriteId: string; animationId?: string }>();
 export function currentProjectName(): string {
   const context = projectContext.getStore();
   if (!context) throw new Error("Open or create a project first");
@@ -16,8 +16,16 @@ export function currentProjectName(): string {
 export function activeSpriteDir(): string {
   const context = projectContext.getStore();
   if (!context) throw new Error("Open or create a project first");
-  safeProjectName(context.spriteId);
+  safeAssetId(context.spriteId);
   return path.join(projectDir(context.name), "sprites", context.spriteId);
+}
+
+export function spriteFile(...parts: string[]): string {
+  const root = activeSpriteDir();
+  const file = path.resolve(root, ...parts);
+  ensureInsideRoot(file);
+  if (file !== root && !file.startsWith(root + path.sep)) throw new Error("Path outside character directory");
+  return file;
 }
 
 export const PROJECT_FILES = {
@@ -30,6 +38,11 @@ export const PROJECT_FILES = {
 } as const;
 
 const SAFE_NAME = /^[a-zA-Z0-9_-]{1,40}$/;
+
+export function safeAssetId(name: string): string {
+  if (!/^[a-zA-Z0-9_-]{1,60}$/.test(name)) throw new Error("Invalid character or animation folder name");
+  return name;
+}
 
 export function safeProjectName(name: string): string {
   if (!SAFE_NAME.test(name)) {
@@ -48,6 +61,7 @@ export function projectDir(name: string): string {
 }
 
 export async function saveBase64Image(base64: string, outputPath: string): Promise<void> {
+  ensureInsideRoot(outputPath);
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, Buffer.from(base64, "base64"));
 }
@@ -63,6 +77,7 @@ export async function downloadVideo(
   outputPath: string,
   headers?: Record<string, string>,
 ): Promise<void> {
+  ensureInsideRoot(outputPath);
   await mkdir(path.dirname(outputPath), { recursive: true });
   const res = await fetch(url, headers ? { headers } : undefined);
   if (!res.ok) throw new Error(`video download failed (${res.status})`);

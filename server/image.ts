@@ -5,13 +5,14 @@ import { spawn } from "node:child_process";
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
 export const IMAGE_MODELS = [
+  { id: "openai/gpt-image-2.5-flare", label: "OpenAI GPT Image 2.5 Flare" },
   { id: "openai/gpt-image-2", label: "OpenAI GPT Image 2" },
   { id: "x-ai/grok-imagine-image-2.0", label: "xAI Grok Imagine Image 2.0" },
 ] as const;
 
 export type ImageModelId = (typeof IMAGE_MODELS)[number]["id"];
 
-export const DEFAULT_IMAGE_MODEL: ImageModelId = "openai/gpt-image-2";
+export const DEFAULT_IMAGE_MODEL: ImageModelId = "openai/gpt-image-2.5-flare";
 
 export function isImageModelId(value: unknown): value is ImageModelId {
   return typeof value === "string" && IMAGE_MODELS.some((model) => model.id === value);
@@ -118,7 +119,8 @@ export async function generateSpriteImage(
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
 
-  const fullPrompt = `${prompt.trim()}\n\n${CHROMA_DIRECTIVE}`;
+  const isFlare = model === "openai/gpt-image-2.5-flare";
+  const fullPrompt = isFlare ? prompt.trim() : `${prompt.trim()}\n\n${CHROMA_DIRECTIVE}`;
 
   const res = await fetch(`${OPENROUTER_BASE}/images`, {
     method: "POST",
@@ -126,7 +128,11 @@ export async function generateSpriteImage(
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ model, prompt: fullPrompt }),
+    body: JSON.stringify({
+      model,
+      prompt: fullPrompt,
+      ...(isFlare ? { quality: "medium", background: "auto", output_format: "png" } : {}),
+    }),
   });
 
   const json = (await res.json().catch(() => ({}))) as ImageGenerationResponse;

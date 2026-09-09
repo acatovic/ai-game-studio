@@ -1,5 +1,6 @@
 import {
   changeSprite,
+  changeAnimation,
   saveDraft,
   animateSprite,
   checkHealth,
@@ -15,11 +16,10 @@ import {
   saveSelection,
   saveSpritesheet,
 } from "./lib/api";
-import { Store, cacheBust, createInitialState, hydrateFromView } from "./lib/state";
-import { composeSpritesheet, downloadDataUrl, loadImage } from "./lib/spritesheet";
+import { Store, createInitialState, hydrateFromView } from "./lib/state";
+import { composeSpritesheet } from "./lib/spritesheet";
 import {
   chevronIcon,
-  downloadIcon,
   folderIcon,
   frameIcon,
   gridIcon,
@@ -55,7 +55,6 @@ export function mountApp(root: HTMLElement) {
 
   const sheetPreview = root.querySelector<HTMLDivElement>("#sheet-preview")!;
   const sheetMeta = root.querySelector<HTMLDivElement>("#sheet-meta")!;
-  const exportBtn = root.querySelector<HTMLButtonElement>("#btn-export")!;
   const gifPreview = root.querySelector<HTMLDivElement>("#gif-preview")!;
 
   const projectLabel = root.querySelector<HTMLSpanElement>("#project-label")!;
@@ -116,19 +115,10 @@ export function mountApp(root: HTMLElement) {
     store.set({ status: "generating-image", errorMessage: null });
     setStatus(spriteStatus, `${spinner()}Generating reference sprite…`);
     try {
+      await persistDraft();
       const result = await generateSprite(prompt, store.get().spriteModel);
-      const img = await loadImage(result.dataUrl);
-      store.set({
-        status: "idle",
-        spriteSrc: result.dataUrl,
-        spriteDimensions: { w: img.naturalWidth, h: img.naturalHeight },
-        frames: [],
-        selectedFrameIndices: new Set(),
-        spritesheetSrc: null,
-        spritesheetCols: null,
-        previewGifSrc: null,
-        previewGifBuilding: false,
-      });
+      applyView(result.view);
+      store.set({ spriteSrc: result.dataUrl });
       setStatus(spriteStatus, "Reference sprite ready.", "success");
       toast("Reference sprite generated");
     } catch (err) {
@@ -152,19 +142,10 @@ export function mountApp(root: HTMLElement) {
     store.set({ status: "generating-video", errorMessage: null });
     setStatus(framesStatus, `${spinner()}Generating motion video…`);
     try {
+      await persistDraft();
       const view = await animateSprite(state.spriteSrc, text, state.motionModel);
-      const v = view.updatedAt;
-      store.set({
-        status: "done",
-        frames: view.frames.map((f) => cacheBust(f, v)!),
-        selectedFrameIndices: new Set(view.selectedFrameIndices),
-        spritesheetSrc: null,
-        spritesheetCols: null,
-        previewGifSrc: null,
-        previewGifBuilding: false,
-      });
-      setStatus(framesStatus, `Extracted ${view.frames.length} frames.`, "success");
-      toast("Frames extracted");
+      applyView(view);
+      await saveCurrentAnimation();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate frames";
       store.set({ status: "error", errorMessage: message });
@@ -188,81 +169,34 @@ export function mountApp(root: HTMLElement) {
     scheduleSelectionPersist();
   });
 
-  generateSheetBtn.addEventListener("click", async () => {
+  async function saveCurrentAnimation() {
     const state = store.get();
-    const selected = [...state.selectedFrameIndices]
-      .sort((a, b) => a - b)
-      .map((i) => state.frames[i])
-      .filter(Boolean);
-    if (selected.length === 0) {
-      setStatus(framesStatus, "Select at least one frame to include.", "error");
-      return;
-    }
+    const selected = [...state.selectedFrameIndices].sort((a, b) => a - b)
+      .map(i => state.frames[i]).filter(Boolean);
+    if (!selected.length) throw new Error("Select at least one frame to include.");
     store.set({ previewGifBuilding: true });
-    setStatus(framesStatus, `${spinner()}Composing spritesheet…`);
+    setStatus(framesStatus, `${spinner()}Saving PNG and Aseprite…`);
     try {
       await persistDraft();
       const sheet = await composeSpritesheet({ frameSrcs: selected });
-      store.set({
-        spritesheetSrc: sheet.dataUrl,
-        spritesheetCols: sheet.cols,
-        previewGifSrc: null,
-        previewGifBuilding: true,
-        status: "done",
-      });
-      setStatus(
-        framesStatus,
-        `${spinner()}Spritesheet ready — building animated preview…`,
-      );
-      toast("Spritesheet ready");
-
-      try {
-        const view = await saveSpritesheet(sheet.dataUrl);
-        const gifSrc = view.previewGifUrl
-          ? `${view.previewGifUrl}?v=${encodeURIComponent(view.updatedAt)}`
-          : null;
-        store.set({ previewGifSrc: gifSrc, previewGifBuilding: false });
-        if (gifSrc) {
-          setStatus(framesStatus, "Spritesheet and preview ready.", "success");
-        } else {
-          setStatus(
-            framesStatus,
-            "Spritesheet ready (animated preview failed — see server log).",
-            "success",
-          );
-        }
-      } catch (err) {
-        store.set({ previewGifBuilding: false });
-        console.warn("[client] failed to persist spritesheet/gif", err);
-      }
-    } catch (err) {
+      const view = await saveSpritesheet(sheet.dataUrl);
+      applyView(view);
+      setStatus(framesStatus, view.previewGifUrl
+        ? "PNG, Aseprite and animated preview saved."
+        : "PNG and Aseprite saved. Animated preview could not be built.", "success");
+    } finally {
       store.set({ previewGifBuilding: false });
-      const message = err instanceof Error ? err.message : "Failed to compose spritesheet";
-      setStatus(framesStatus, message, "error");
     }
-  });
+  }
 
-  exportBtn.addEventListener("click", () => {
-    const src = store.get().spritesheetSrc;
-    if (!src) {
-      toast("Generate the spritesheet first");
-      return;
-    }
-    if (src.startsWith("data:")) {
-      downloadDataUrl(src, "spritesheet.png");
-    } else {
-      const a = document.createElement("a");
-      a.href = src;
-      a.download = "spritesheet.png";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }
+  generateSheetBtn.addEventListener("click", async () => {
+    try { await saveCurrentAnimation(); }
+    catch (err) { setStatus(framesStatus, err instanceof Error ? err.message : "Could not save animation", "error"); }
   });
 
   // ---- New / Save / Load wiring ----
   newBtn.addEventListener("click", async () => {
-    const name = window.prompt("New project name (letters, numbers, hyphen or underscore):");
+    const name = await askName("New project", "", 40);
     if (!name?.trim()) return;
     store.set({ navigating: true });
     try {
@@ -370,20 +304,42 @@ export function mountApp(root: HTMLElement) {
     finally { store.set({ navigating: false }); }
   }
   spritePicker.addEventListener("change", () => { void navigateSprite("load", spritePicker.value); });
-  addSpriteBtn.addEventListener("click", () => {
-    const name = window.prompt("Sprite name:", `Sprite ${(store.get().project?.sprites.length ?? 0) + 1}`);
+  addSpriteBtn.addEventListener("click", async () => {
+    const name = await askName("Add character");
     if (name?.trim()) void navigateSprite("new", name.trim());
   });
-  renameSpriteBtn.addEventListener("click", () => {
+  renameSpriteBtn.addEventListener("click", async () => {
     const project = store.get().project;
-    const name = window.prompt("Sprite name:", project?.sprites.find(s => s.id === project.activeSpriteId)?.name);
+    const name = await askName("Rename character", project?.sprites.find(s => s.id === project.activeSpriteId)?.name);
     if (name?.trim()) void navigateSprite("rename", name.trim());
+  });
+  const animationPicker = root.querySelector<HTMLSelectElement>("#animation-picker")!;
+  const addAnimationBtn = root.querySelector<HTMLButtonElement>("#btn-add-animation")!;
+  const renameAnimationBtn = root.querySelector<HTMLButtonElement>("#btn-rename-animation")!;
+  async function navigateAnimation(action: "new" | "load" | "rename", value: string) {
+    store.set({ navigating: true });
+    try {
+      await persistDraft();
+      applyView(await changeAnimation(action, value));
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not update animation"); }
+    finally { store.set({ navigating: false }); }
+  }
+  animationPicker.addEventListener("change", () => { void navigateAnimation("load", animationPicker.value); });
+  addAnimationBtn.addEventListener("click", async () => {
+    const name = await askName("Add animation");
+    if (name?.trim()) void navigateAnimation("new", name.trim());
+  });
+  renameAnimationBtn.addEventListener("click", async () => {
+    const state = store.get();
+    const name = await askName("Rename animation", state.animations.find(a => a.id === state.activeAnimationId)?.name);
+    if (name?.trim()) void navigateAnimation("rename", name.trim());
   });
   async function persistDraft() {
     window.clearTimeout(selectionTimer);
     await selectionPending;
     const state = store.get();
-    await saveSelection([...state.selectedFrameIndices]);
+    if (!state.project?.activeSpriteId) return;
+    if (state.activeAnimationId) await saveSelection([...state.selectedFrameIndices]);
     await saveDraft({ spritePrompt: state.spritePrompt, motionPrompt: state.motionPrompt,
       spriteModel: state.spriteModel, motionModel: state.motionModel });
   }
@@ -428,27 +384,42 @@ export function mountApp(root: HTMLElement) {
 
     welcome.hidden = !!state.project;
     editor.hidden = !state.project;
-    for (const button of [homeNew, homeOpen, closeBtn, newBtn, saveBtn, loadBtn, addSpriteBtn, renameSpriteBtn]) button.disabled = busy;
-    spritePicker.disabled = busy;
-    promptInput.disabled = busy;
-    motionInput.disabled = busy;
-    motionModelSelect.disabled = busy;
+    for (const button of [homeNew, homeOpen, closeBtn, newBtn, saveBtn, loadBtn, addSpriteBtn, renameSpriteBtn, addAnimationBtn, renameAnimationBtn]) button.disabled = busy;
+    const hasCharacter = !!state.project?.activeSpriteId;
+    const hasAnimation = !!state.activeAnimationId;
+    root.querySelector<HTMLElement>(".columns")!.hidden = !hasCharacter;
+    spritePicker.hidden = !hasCharacter;
+    root.querySelector<HTMLElement>('label[for="sprite-picker"]')!.hidden = !hasCharacter;
+    renameSpriteBtn.hidden = !hasCharacter;
+    root.querySelector<HTMLElement>(".sprite-toolbar > span")!.hidden = !hasCharacter;
+    animationPicker.hidden = !hasAnimation;
+    renameAnimationBtn.hidden = !hasAnimation;
+    root.querySelector<HTMLElement>('label[for="animation-picker"]')!.hidden = !hasAnimation;
+    root.querySelector<HTMLElement>("#animation-fields")!.hidden = !hasAnimation;
+    spritePicker.disabled = busy || !hasCharacter;
+    animationPicker.disabled = busy || !hasAnimation;
+    addAnimationBtn.disabled = busy || !hasCharacter;
+    animationPicker.innerHTML = state.animations.map(a => `<option value="${escapeAttr(a.id)}">${escapeHtml(a.name)}</option>`).join("");
+    animationPicker.value = state.activeAnimationId;
+    promptInput.disabled = busy || !hasCharacter;
+    motionInput.disabled = busy || !hasAnimation;
+    motionModelSelect.disabled = busy || !hasAnimation;
     loadMenu.inert = busy;
     framesGrid.inert = busy;
     const project = state.project;
-    spritePicker.innerHTML = (project?.sprites ?? [{ id: "sprite-1", name: "Sprite 1" }])
+    spritePicker.innerHTML = (project?.sprites ?? [])
       .map(s => `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)}</option>`).join("");
-    spritePicker.value = project?.activeSpriteId ?? "sprite-1";
-    generateSpriteBtn.disabled = busy;
-    spriteModelSelect.disabled = busy;
-    generateFramesBtn.disabled = busy || !state.spriteSrc;
-    generateSheetBtn.disabled = busy || state.frames.length === 0;
-    exportBtn.disabled = !state.spritesheetSrc;
+    spritePicker.value = project?.activeSpriteId ?? "";
+    generateSpriteBtn.disabled = busy || !hasCharacter;
+    spriteModelSelect.disabled = busy || !hasCharacter;
+    generateFramesBtn.disabled = busy || !hasAnimation || !state.spriteSrc;
+    generateSheetBtn.disabled = busy || state.selectedFrameIndices.size === 0;
+
 
     if (state.spriteSrc) {
       spritePreview.innerHTML = `<img src="${state.spriteSrc}" alt="Reference sprite" />`;
       if (state.spriteDimensions) {
-        spriteCaption.textContent = `${state.spriteDimensions.w} × ${state.spriteDimensions.h} px`;
+        spriteCaption.textContent = `${state.project?.sprites.find(s => s.id === state.project?.activeSpriteId)?.name}.png · ${state.spriteDimensions.w} × ${state.spriteDimensions.h} px`;
       } else {
         spriteCaption.textContent = "—";
       }
@@ -461,7 +432,8 @@ export function mountApp(root: HTMLElement) {
 
     if (state.spritesheetSrc && state.spritesheetCols) {
       sheetPreview.innerHTML = `<img src="${state.spritesheetSrc}" alt="Spritesheet" />`;
-      sheetMeta.textContent = `1 × ${state.spritesheetCols} · ${state.spritesheetCols} frames`;
+      const animationName = state.animations.find(a => a.id === state.activeAnimationId)?.name ?? "animation";
+      sheetMeta.textContent = `${animationName}.png${state.asepriteSrc ? ` + ${animationName}.aseprite` : " (regenerate to save Aseprite)"} · ${state.spritesheetCols} frames`;
     } else {
       sheetPreview.innerHTML = `<span class="sheet-preview__placeholder">Generate a spritesheet to preview here</span>`;
       const pending = state.selectedFrameIndices.size;
@@ -648,19 +620,19 @@ function renderShell(): string {
       </header>
 
       <main class="app-main">
-        <nav class="sprite-toolbar" aria-label="Project sprites">
-          <label for="sprite-picker">Sprites</label>
+        <nav class="sprite-toolbar" aria-label="Project characters">
+          <label for="sprite-picker">Characters</label>
           <select id="sprite-picker" class="select"></select>
           <button id="btn-rename-sprite" class="btn btn--secondary btn--sm" type="button">Rename</button>
-          <button id="btn-add-sprite" class="btn btn--secondary btn--sm" type="button">${plusIcon} Add sprite</button>
-          <span>Each sprite has its own frames and spritesheet</span>
+          <button id="btn-add-sprite" class="btn btn--secondary btn--sm" type="button">${plusIcon} Add character</button>
+          <span>One reference image, multiple named animations</span>
         </nav>
         <div class="columns">
 
           <section class="card">
-            <h2 class="card__title">1. Generate Reference Sprite</h2>
+            <h2 class="card__title">1. Create Character</h2>
             <div class="field">
-              <label class="field__label" for="sprite-prompt">Reference Sprite Prompt</label>
+              <label class="field__label" for="sprite-prompt">Character Prompt</label>
               <textarea
                 id="sprite-prompt"
                 class="textarea"
@@ -674,11 +646,11 @@ function renderShell(): string {
             </div>
             <button id="btn-generate-sprite" class="btn btn--primary btn--block" type="button">
               ${sparkleIcon}
-              Generate Reference Sprite
+              Generate Character
             </button>
             <div id="sprite-status" class="status"></div>
             <div class="preview">
-              <div class="preview__label">Reference Sprite</div>
+              <div class="preview__label">Character Reference</div>
               <div id="sprite-preview" class="preview__box">
                 <span class="preview__placeholder">No sprite yet</span>
               </div>
@@ -687,7 +659,16 @@ function renderShell(): string {
           </section>
 
           <section class="card">
-            <h2 class="card__title">2. Generate Movement Frames</h2>
+            <h2 class="card__title">2. Create Animation</h2>
+            <div class="field">
+              <label class="field__label" for="animation-picker">Animation</label>
+              <select id="animation-picker" class="select"></select>
+              <div class="animation-actions">
+                <button id="btn-rename-animation" class="btn btn--secondary btn--sm" type="button">Rename</button>
+                <button id="btn-add-animation" class="btn btn--secondary btn--sm" type="button">${plusIcon} Add animation</button>
+              </div>
+            </div>
+            <div id="animation-fields">
             <div class="field">
               <label class="field__label" for="motion-prompt">Movement Prompt</label>
               <textarea
@@ -704,7 +685,7 @@ function renderShell(): string {
               </div>
               <button id="btn-generate-frames" class="btn btn--secondary motion-controls__btn" type="button">
                 ${frameIcon}
-                Generate Frames
+                Generate Animation
               </button>
             </div>
             <div id="frames-status" class="status"></div>
@@ -714,8 +695,9 @@ function renderShell(): string {
             </div>
             <button id="btn-generate-sheet" class="btn btn--primary btn--block btn--lg" type="button">
               ${gridIcon}
-              Generate Spritesheet
+              Update Spritesheet
             </button>
+            </div>
           </section>
 
           <section class="card">
@@ -725,11 +707,8 @@ function renderShell(): string {
             </div>
             <div class="sheet-footer">
               <div id="sheet-meta" class="sheet-footer__meta">No spritesheet yet</div>
-              <button id="btn-export" class="btn btn--secondary" type="button">
-                ${downloadIcon}
-                Export PNG
-              </button>
             </div>
+            <p class="asset-save-note">PNG and Aseprite are saved automatically in your project. Update the spritesheet after changing the frame selection.</p>
             <div class="gif-section">
               <div class="gif-section__label">Animated Preview</div>
               <div id="gif-preview" class="gif-preview">
@@ -755,4 +734,31 @@ function createToast(root: HTMLElement) {
     if (timer) window.clearTimeout(timer);
     timer = window.setTimeout(() => el.classList.remove("is-visible"), 2200);
   };
+}
+
+function askName(title: string, initial = "", maxLength = 60): Promise<string | null> {
+  const dialog = document.createElement("dialog");
+  dialog.className = "name-dialog";
+  dialog.setAttribute("aria-labelledby", "name-dialog-title");
+  dialog.innerHTML = `<form method="dialog">
+    <h2 id="name-dialog-title">${escapeHtml(title)}</h2>
+    <label class="field__label" for="asset-name">Name</label>
+    <input id="asset-name" class="select" name="name" value="${escapeAttr(initial)}"
+      required maxlength="${maxLength}" pattern="[a-zA-Z0-9_\\-]+" autofocus autocomplete="off" />
+    <p>Use letters, numbers, hyphens or underscores. This name is used for the folder.</p>
+    <div class="name-dialog__actions">
+      <button class="btn btn--secondary" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn btn--primary" value="save">Save name</button>
+    </div>
+  </form>`;
+  document.body.appendChild(dialog);
+  return new Promise(resolve => {
+    dialog.addEventListener("close", () => {
+      const value = dialog.returnValue === "save" ? dialog.querySelector<HTMLInputElement>("input")!.value.trim() : null;
+      dialog.remove();
+      resolve(value);
+    }, { once: true });
+    dialog.showModal();
+    dialog.querySelector<HTMLInputElement>("input")!.select();
+  });
 }

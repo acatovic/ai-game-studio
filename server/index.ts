@@ -1,9 +1,11 @@
 import "dotenv/config";
+import { validatePrompt } from "./validation.js";
 import { initializeStorage } from "./storage.js";
 await initializeStorage();
 import express, { type Request, type Response, type NextFunction } from "express";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
+import { stageAnimationAssets } from "./animation-assets.js";
 import { existsSync } from "node:fs";
 import {
   DEFAULT_IMAGE_MODEL,
@@ -26,11 +28,11 @@ import {
   PROJECT_FILES,
   projectContext,
   safeProjectName,
+  safeAssetId,
   downloadVideo,
   ensureInsideRoot,
   readPngDims,
   saveBase64Image,
-  saveDataUrlPng,
 } from "./files.js";
 import {
   deleteSavedProject,
@@ -42,8 +44,9 @@ import {
 
   toView,
   updateSprite,
-  wipeFramesAndSheet,
-  wipeSpritesheet,
+  changeAnimation,
+  animationPath,
+  assetName,
 } from "./projects.js";
 
 
@@ -66,8 +69,10 @@ app.use("/api", (req, res, next) => {
   if (!name && !spriteId) return next();
   try {
     safeProjectName(name ?? "");
-    safeProjectName(spriteId ?? "");
-    projectContext.run({ name: name!, spriteId: spriteId! }, next);
+    if (spriteId) safeAssetId(spriteId);
+    const animationId = req.get("X-Animation-Id");
+    if (animationId) safeAssetId(animationId);
+    projectContext.run({ name: name!, spriteId: spriteId ?? "", animationId: animationId || undefined }, next);
   } catch (err) { handleError(err, res); }
 });
 app.use("/projects", express.static(PROJECTS_DIR, { fallthrough: false }));
@@ -128,7 +133,8 @@ app.get("/api/projects", async (_req, res) => {
 
 app.post("/api/projects/save", async (_req, res) => {
   try {
-    res.json(await updateSprite({}).then(toView));
+    const current = await readManifest();
+    res.json(current.project!.activeSpriteId ? await updateSprite({}).then(toView) : toView(current));
   } catch (err) {
     handleError(err, res);
   }
@@ -156,12 +162,23 @@ app.post("/api/projects/sprites/:action", async (req, res) => {
   } catch (err) { handleError(err, res); }
 });
 
+app.post("/api/projects/animations/:action", async (req, res) => {
+  try {
+    const action = req.params.action;
+    if (action !== "new" && action !== "load" && action !== "rename") throw new Error("Unknown animation action");
+    res.json(await changeAnimation(action, asString(req.body?.value, "value", 60)));
+  } catch (err) { handleError(err, res); }
+});
+
 app.post("/api/projects/draft", async (req, res) => {
   try {
-    const patch: Record<string, string> = {};
-    for (const key of ["spritePrompt", "motionPrompt", "spriteModel", "motionModel"]) {
+    const patch: Record<string, string> = {
+      spritePrompt: validatePrompt(req.body?.spritePrompt, "Character prompt", true),
+      motionPrompt: validatePrompt(req.body?.motionPrompt, "Movement prompt", true),
+    };
+    for (const key of ["spriteModel", "motionModel"]) {
       const value = req.body?.[key];
-      if (typeof value !== "string" || value.length > 2000) throw new Error("Invalid sprite draft");
+      if (typeof value !== "string" || value.length > 2000) throw new Error(`Invalid ${key}: expected a model ID of up to 2,000 characters`);
       patch[key] = value;
     }
     res.json(toView(await updateSprite(patch)));
@@ -181,9 +198,9 @@ app.post("/api/projects/delete", async (req, res) => {
 app.post("/api/projects/selection", async (req, res) => {
   try {
     const indices = req.body?.selectedIndices;
-    if (!Array.isArray(indices) || indices.some((i) => typeof i !== "number")) {
-      throw new Error("selectedIndices must be an array of numbers");
-    }
+    const current = await readManifest();
+    if (!Array.isArray(indices) || indices.some(i => !Number.isInteger(i) || i < 0 || i >= current.frames.length) ||
+        new Set(indices).size !== indices.length) throw new Error("Invalid frame selection");
     const m = await updateSprite({ selectedFrameIndices: indices });
     res.json(toView(m));
   } catch (err) {
@@ -193,16 +210,18 @@ app.post("/api/projects/selection", async (req, res) => {
 
 app.post("/api/projects/spritesheet", async (req, res) => {
   try {
-    await readManifest();
+    const current = await readManifest();
+    if (!current.activeAnimationId) throw new Error("Add an animation first");
     const dataUrl = asString(req.body?.dataUrl, "dataUrl", 50_000_000);
-    const spritesheetAbs = path.join(activeSpriteDir(), PROJECT_FILES.spritesheet);
-    await saveDataUrlPng(dataUrl, spritesheetAbs);
-
-    let m = await updateSprite({ spritesheet: PROJECT_FILES.spritesheet });
+    const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+    if (!match) throw new Error("Expected a PNG spritesheet");
+    const name = assetName(current.animations.find(a => a.id === current.activeAnimationId)!.name);
+    const assets = await stageAnimationAssets(Buffer.from(match[1], "base64"), current.selectedFrameIndices.length, name, current.activeAnimationId);
+    let m = await updateSprite({ ...assets, spritesheetFrameCount: current.selectedFrameIndices.length, previewGif: null });
 
     // Best-effort GIF build from current selection
     try {
-      const gifName = await buildPreviewGif(m.selectedFrameIndices);
+      const gifName = await buildPreviewGif(m.frames, m.selectedFrameIndices, animationPath(m.activeAnimationId));
       m = await updateSprite({ previewGif: gifName });
     } catch (gifErr) {
       const msg = gifErr instanceof Error ? gifErr.message : String(gifErr);
@@ -218,8 +237,9 @@ app.post("/api/projects/spritesheet", async (req, res) => {
 
 app.post("/api/sprites/generate", requireKey, async (req, res) => {
   try {
-    await readManifest();
-    const prompt = asString(req.body?.prompt, "prompt");
+    const current = await readManifest();
+    if (!current.project!.activeSpriteId) throw new Error("Add a character first");
+    const prompt = validatePrompt(req.body?.prompt, "Character prompt");
     const requestedModel = req.body?.model;
     if (requestedModel !== undefined && !isImageModelId(requestedModel)) {
       throw new Error("unsupported image model");
@@ -227,10 +247,9 @@ app.post("/api/sprites/generate", requireKey, async (req, res) => {
     const model = requestedModel ?? DEFAULT_IMAGE_MODEL;
     const base64 = await generateSpriteImage(prompt, model);
 
-    // Reset downstream artifacts (frames + spritesheet) before writing the new sprite
-    await wipeFramesAndSheet();
-
-    const refAbs = path.join(activeSpriteDir(), PROJECT_FILES.ref);
+    const character = current.project!.sprites.find(s => s.id === current.project!.activeSpriteId)!;
+    const reference = `${assetName(character.name)}.png`;
+    const refAbs = path.join(activeSpriteDir(), reference);
     await saveBase64Image(base64, refAbs);
     const buf = await readFile(refAbs);
     const dims = readPngDims(buf);
@@ -238,12 +257,8 @@ app.post("/api/sprites/generate", requireKey, async (req, res) => {
     const m = await updateSprite({
       spritePrompt: prompt,
       spriteModel: model,
-      sprite: PROJECT_FILES.ref,
+      sprite: reference,
       spriteDimensions: dims,
-      frames: [],
-      selectedFrameIndices: [],
-      spritesheet: null,
-      previewGif: null,
     });
 
     res.json({
@@ -257,24 +272,24 @@ app.post("/api/sprites/generate", requireKey, async (req, res) => {
 
 app.post("/api/sprites/animate", requireKey, async (req, res) => {
   try {
-    await readManifest();
+    const current = await readManifest();
+    if (!current.activeAnimationId) throw new Error("Add an animation first");
     const image = asImageRef(req.body?.image);
-    const text = asString(req.body?.text, "text");
+    const text = validatePrompt(req.body?.text, "Movement prompt");
     const model = isVideoModelId(req.body?.model) ? req.body.model : DEFAULT_VIDEO_MODEL;
     const duration =
       typeof req.body?.duration === "number" ? req.body.duration : defaultDurationFor(model);
 
     const imageInput = await resolveImageInput(image);
 
-    await wipeSpritesheet();
-
     const video = await generateSpriteMotionVideo(imageInput, text, duration, model);
-    const videoAbs = path.join(activeSpriteDir(), PROJECT_FILES.source);
+    const prefix = animationPath(current.activeAnimationId, `runs/${crypto.randomUUID()}`);
+    const videoAbs = path.join(activeSpriteDir(), prefix, PROJECT_FILES.source);
     await downloadVideo(video.url, videoAbs, video.headers);
 
-    const framesAbs = path.join(activeSpriteDir(), PROJECT_FILES.framesDir);
+    const framesAbs = path.join(activeSpriteDir(), prefix, PROJECT_FILES.framesDir);
     const frameFiles = await extractFrames(videoAbs, framesAbs);
-    const frames = frameFiles.map((f) => `${PROJECT_FILES.framesDir}/${f}`);
+    const frames = frameFiles.map((f) => `${prefix}/${PROJECT_FILES.framesDir}/${f}`);
 
     const m = await updateSprite({
       motionPrompt: text,
@@ -282,6 +297,8 @@ app.post("/api/sprites/animate", requireKey, async (req, res) => {
       frames,
       selectedFrameIndices: frames.map((_, i) => i),
       spritesheet: null,
+      spritesheetFrameCount: null,
+      aseprite: null,
       previewGif: null,
     });
 

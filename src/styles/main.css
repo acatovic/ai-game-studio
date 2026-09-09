@@ -577,6 +577,8 @@ button {
 
 .sheet-footer {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
   margin-top: 4px;
@@ -701,3 +703,15 @@ button {
 .welcome__actions .btn { min-width: 170px; padding: 18px 24px; font-size: 16px; border-radius: 12px; }
 .welcome__projects { text-align: left; margin: 24px auto 0; max-width: 390px; max-height: 300px; overflow-y: auto; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px; box-shadow: var(--shadow-sm); }
 @media (max-width: 420px) { .welcome__actions { flex-direction: column; } }
+
+.animation-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.asset-save-note { color: var(--text-muted); font-size: 12px; line-height: 1.5; margin: 12px 0 0; }
+.sheet-footer__meta { overflow-wrap: anywhere; }
+
+#animation-fields { display: flex; flex-direction: column; flex: 1; gap: 16px; }
+.name-dialog { width: min(420px, calc(100vw - 40px)); padding: 24px; border: 1px solid var(--border); border-radius: 14px; color: var(--text); background: var(--card); box-shadow: var(--shadow-md); }
+.name-dialog::backdrop { background: rgb(20 30 50 / 35%); }
+.name-dialog h2 { margin: 0 0 20px; font-size: 20px; }
+.name-dialog p { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.name-dialog input { width: 100%; margin-top: 8px; }
+.name-dialog__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }

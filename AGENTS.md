@@ -7,12 +7,24 @@ The project implementation now supersedes the older working-copy/snapshot detail
 - Startup shows a centered **New Project** / **Open** screen; do not auto-open a project.
 - Store projects in `$HOME/.ai-game-studio/<name>/` by default. `AI_GAME_STUDIO_HOME` overrides the storage root.
 - `npm install` creates the storage directory via `scripts/install.ts`; the server also ensures it exists.
-- Each project has a versioned JSON `.project` manifest and `sprites/<id>/sprite.json` plus that sprite's artifacts.
+- Each project has a versioned JSON `.project` manifest and `sprites/<character-name>/sprite.json` plus that character's artifacts. New projects have no characters until the user names one through Add character.
 - Edit sprites directly in their own directories. There is no `latest` directory, shared working copy, or snapshot copy on Save/Open.
 - API requests identify their project and sprite through `X-Project-Name` / `X-Sprite-Id`, scoped with AsyncLocalStorage.
 - Validate generated paths against the configured storage root, while extraction scripts still live in the source checkout.
 - Save, sprite switching, and Close project persist draft prompts and selections. Close returns to the start screen.
 - Run `npm run build` and `node --import tsx --test tests/*.test.ts` for project-storage changes.
+
+## Characters and animations
+
+- A project’s `sprites` entries now represent named characters. Each character has one reference PNG named after it and a version-2 `sprite.json`.
+- Each character owns multiple named animations, tracked in `animations/<animation-name>/animation.json`. Motion prompts, models, frames, selections, and outputs belong to the animation.
+- Character and animation IDs equal their folder/UI names. Rename moves the folder and updates all affected manifest paths; name collisions are rejected. New characters have no animations until the user adds one.
+- Requests include `X-Animation-Id` alongside project and character headers. Never use another tab’s active animation for a scoped write.
+- Generating an animation automatically composes and saves its PNG and Aseprite pair. Updating the frame selection requires **Update Spritesheet** to rebuild the pair. There are no export buttons.
+- Both formats contain the same 128×128 frames. Server-side Aseprite encoding decodes the composed PNG with ffmpeg and writes a 12 fps animation.
+- Paired outputs use the animation name and are staged in a revision directory before the manifest is updated. Failed saves preserve the previous pair. Keep generation runs isolated per animation.
+- Opening a legacy character migrates its single motion to the first animation, creates Aseprite alongside its existing PNG, and preserves original files. Character regeneration does not erase existing animations.
+- Run `npm run build` and `node --import tsx --test tests/*.test.ts` for these changes.
 
 ## Project
 
