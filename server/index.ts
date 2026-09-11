@@ -4,7 +4,10 @@ import { initializeStorage } from "./storage.js";
 await initializeStorage();
 import express, { type Request, type Response, type NextFunction } from "express";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdir, writeFile, rm } from "node:fs/promises";
+import { MUSIC_MODELS, DEFAULT_MUSIC_MODEL, validateMusicSettings, generateMusic } from "./music.js";
+import { changeMusic, musicView, readMusic, saveMusicDraft, commitMusicOutput, musicFile, newMusicRevision } from "./music-projects.js";
+import { decodeMusic, prepareMusicWav } from "./music-audio.js";
 import { stageAnimationAssets } from "./animation-assets.js";
 import { existsSync } from "node:fs";
 import {
@@ -113,6 +116,60 @@ app.get("/api/models/video", (_req, res) => {
 
 app.get("/api/models/image", (_req, res) => {
   res.json({ models: IMAGE_MODELS, default: DEFAULT_IMAGE_MODEL });
+});
+
+app.get("/api/models/music", (_req, res) => {
+  res.json({ models: MUSIC_MODELS, default: DEFAULT_MUSIC_MODEL });
+});
+
+function musicId(req: Request): string {
+  const id = req.get("X-Music-Id");
+  if (!id) throw new Error("Select a music track first (X-Music-Id is required)");
+  return safeAssetId(id);
+}
+
+app.get("/api/music", async (req, res) => {
+  try { res.json(await musicView(req.get("X-Music-Id"))); }
+  catch (err) { handleError(err, res); }
+});
+
+app.post("/api/music/draft", async (req, res) => {
+  try { res.json(await saveMusicDraft(musicId(req), req.body)); }
+  catch (err) { handleError(err, res); }
+});
+
+app.post("/api/music/generate", requireKey, async (req, res) => {
+  let staged: string | undefined;
+  try {
+    const id = musicId(req);
+    await readMusic(id);
+    const settings = validateMusicSettings(req.body);
+    const revision = newMusicRevision(id);
+    staged = musicFile(id, revision);
+    const source = `${revision}/source.mp3`;
+    const audio = `${revision}/${id}.wav`;
+    const data = await generateMusic(settings);
+    await mkdir(staged, { recursive: true });
+    await writeFile(musicFile(id, source), data);
+    const pcm = await decodeMusic(musicFile(id, source), settings.duration + (settings.loop ? 1 : 0));
+    await writeFile(musicFile(id, audio), prepareMusicWav(pcm, settings.duration, settings.loop));
+    const view = await commitMusicOutput(id, { ...settings, source, audio,
+      crossfadeSeconds: settings.loop ? 1 : 0, createdAt: new Date().toISOString() });
+    staged = undefined;
+    res.json(view);
+  } catch (err) {
+    if (staged) await rm(staged, { recursive: true, force: true }).catch(() => {});
+    handleError(err, res);
+  }
+});
+
+app.post("/api/music/:action", async (req, res) => {
+  try {
+    const action = req.params.action;
+    if (action !== "new" && action !== "load" && action !== "rename") throw new Error("Unknown music action");
+    res.json(await changeMusic(action, asString(req.body?.value, "Music name", 60),
+      action === "rename" ? musicId(req) : undefined));
+  } catch (err) { handleError(err, res); }
 });
 
 app.get("/api/projects/current", async (_req, res) => {
@@ -330,7 +387,7 @@ function handleError(err: unknown, res: Response) {
 }
 
 function redact(msg: string): string {
-  return msg.replace(/sk-or-[A-Za-z0-9_-]+/g, "***");
+  return msg.replace(/(?:sk-or-|xai-)[A-Za-z0-9_-]+/g, "***");
 }
 
 const server = app.listen(PORT, () => {

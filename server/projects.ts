@@ -12,6 +12,8 @@ export interface ProjectDocument {
   name: string;
   activeSpriteId: string;
   sprites: { id: string; name: string; path: string }[];
+  activeMusicId?: string;
+  music?: { id: string; name: string; path: string }[];
 }
 
 export interface AnimationSummary { id: string; name: string }
@@ -100,7 +102,7 @@ export function emptyManifest(name: string): ProjectManifest {
 }
 
 
-async function writeJson(file: string, value: unknown): Promise<void> {
+export async function writeJson(file: string, value: unknown): Promise<void> {
   ensureInsideRoot(file);
   await mkdir(path.dirname(file), { recursive: true });
   const temporary = `${file}.${randomUUID()}.tmp`;
@@ -116,10 +118,19 @@ export async function readProjectDocument(name: string): Promise<ProjectDocument
     safeAssetId(sprite.id);
     if (typeof sprite.name !== "string" || sprite.path !== `sprites/${sprite.id}/sprite.json`) throw new Error("Invalid sprite entry");
   }
+  if (doc.music !== undefined) {
+    if (!Array.isArray(doc.music) || (doc.music.length
+      ? !doc.music.some(track => track.id === doc.activeMusicId)
+      : !!doc.activeMusicId)) throw new Error("Invalid project music entries");
+    for (const track of doc.music) {
+      safeAssetId(track.id);
+      if (track.name !== track.id || track.path !== `music/${track.id}/music.json`) throw new Error("Invalid music entry");
+    }
+  }
   return doc;
 }
 
-async function writeProjectDocument(doc: ProjectDocument): Promise<void> {
+export async function writeProjectDocument(doc: ProjectDocument): Promise<void> {
   await writeJson(path.join(projectDir(doc.name), ".project"), doc);
 }
 

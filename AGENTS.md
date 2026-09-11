@@ -1,5 +1,16 @@
 # AGENTS.md
 
+## Music assets
+
+- The Music workspace creates named, project-level tracks independently of characters.
+- Use OpenRouter streamed chat completions (`modalities: ["text", "audio"]`, `audio: { format: "mp3" }`, `stream: true`), defaulting to `google/lyria-3-pro-preview`. Read base64 audio from SSE `delta.audio.data`; do not use a speech voice or an undocumented duration/loop API parameter.
+- Store tracks in `music/<name>/music.json` with version 1, draft prompt/model/duration/loop settings, and separate committed output metadata. Optional `.project` fields `music` and `activeMusicId` preserve compatibility with existing version-1 projects.
+- Short clips and loops support 30–90 whole seconds (default 30). Use a blue/gray Looping toggle and inline length validation. Show the animated SVG loading character during generation; the loop preview control is called Test Loop. Duration is prompted, then enforced locally. Loop processing consumes one extra second for a circular crossfade; do not promise musical or rhythmic continuity.
+- Keep original MP3 and processed 48 kHz stereo PCM WAV in isolated revision directories. Commit the manifest atomically only after processing succeeds; failed generation must preserve the previous output.
+- Music writes require explicit `X-Project-Name` and `X-Music-Id`; never fall back to another tab's active track for a write.
+- Save, switching tracks or workspaces, and Close project persist music drafts. Rename moves the track folder and renames the current WAV.
+- Run `npm run build` and `node --import tsx --test tests/*.test.ts` for music and storage changes. Test provider responses are mocked; audio processing uses real ffmpeg.
+
 ## Current project storage and startup
 
 The project implementation now supersedes the older working-copy/snapshot details below:
