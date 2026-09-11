@@ -1,5 +1,16 @@
 # AGENTS.md
 
+## Sound & SFX (supersedes earlier Music/OpenRouter-only audio instructions)
+
+- Sound & SFX uses ElevenLabs directly from the server with `ELEVENLABS_API_KEY` in `.env`. This is an explicit exception to the OpenRouter-only boundary; images and video still use OpenRouter.
+- POST `https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128` with `xi-api-key` and JSON `text`, `model_id: "eleven_text_to_sound_v2"`, `duration_seconds`, and `loop`. Read binary MP3; do not use chat completions, SSE, or music-only prompt directives.
+- Duration is Auto (`null`, the default) or a finite number between 0.5 and 30, inclusive. Preserve null through client requests, drafts, output settings, and the ElevenLabs request. Save actual decoded length separately as `output.actualDuration`.
+- Looping uses the provider's native `loop` flag. Preserve decoded samples without local crossfades, trimming, or fades. Keep the animated SVG loading character and Test Loop control.
+- Keep existing `music/<name>/music.json`, `.project` music fields, `/api/music` routes, and X-Music-Id scoping for compatibility. Lyria draft settings adapt to the new model (lengths >30 become Auto); preserve original files and committed metadata.
+- Stage original MP3 and 48 kHz stereo WAV in isolated revisions and atomically commit only after successful processing. Failed generations preserve the previous output.
+- Redact actual provider key values as well as token prefixes from errors. Never expose either provider key to the browser. Health/key warnings distinguish OpenRouter from ElevenLabs.
+- Run `npm run build` and `node --import tsx --test tests/*.test.ts` for sound and storage changes.
+
 ## Current project storage and startup
 
 The project implementation now supersedes the older working-copy/snapshot details below:

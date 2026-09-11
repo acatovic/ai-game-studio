@@ -16,6 +16,7 @@ import {
   saveSelection,
   saveSpritesheet,
 } from "./lib/api";
+import { mountMusic } from "./components/music";
 import { Store, createInitialState, hydrateFromView } from "./lib/state";
 import { composeSpritesheet } from "./lib/spritesheet";
 import {
@@ -37,6 +38,22 @@ export function mountApp(root: HTMLElement) {
   root.innerHTML = renderShell();
 
   const toast = createToast(root);
+  const music = mountMusic(root.querySelector<HTMLElement>("#music-workspace")!,
+    busy => store.set({ navigating: busy }), askName);
+  let workspace: "sprites" | "music" = "sprites";
+  const spriteTab = root.querySelector<HTMLButtonElement>("#tab-sprites")!;
+  const musicTab = root.querySelector<HTMLButtonElement>("#tab-music")!;
+  for (const [tab, next] of [[spriteTab, "sprites"], [musicTab, "music"]] as const) {
+    tab.addEventListener("click", async () => {
+      store.set({ navigating: true });
+      try {
+        await persistDraft();
+        music.stopPlayback();
+        workspace = next;
+      } catch (err) { toast(err instanceof Error ? err.message : "Could not save drafts"); }
+      finally { store.set({ navigating: false }); }
+    });
+  }
 
   // ---- Refs ----
   const promptInput = root.querySelector<HTMLTextAreaElement>("#sprite-prompt")!;
@@ -82,6 +99,8 @@ export function mountApp(root: HTMLElement) {
     try {
       await persistDraft();
       setActiveProject(null);
+      await music.openProject(null);
+      workspace = "sprites";
       const state = store.get();
       store.set({ ...createInitialState(), imageModels: state.imageModels, videoModels: state.videoModels,
         savedProjects: await listProjects() });
@@ -117,7 +136,7 @@ export function mountApp(root: HTMLElement) {
     try {
       await persistDraft();
       const result = await generateSprite(prompt, store.get().spriteModel);
-      applyView(result.view);
+      await applyView(result.view);
       store.set({ spriteSrc: result.dataUrl });
       setStatus(spriteStatus, "Reference sprite ready.", "success");
       toast("Reference sprite generated");
@@ -144,7 +163,7 @@ export function mountApp(root: HTMLElement) {
     try {
       await persistDraft();
       const view = await animateSprite(state.spriteSrc, text, state.motionModel);
-      applyView(view);
+      await applyView(view);
       await saveCurrentAnimation();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate frames";
@@ -180,7 +199,7 @@ export function mountApp(root: HTMLElement) {
       await persistDraft();
       const sheet = await composeSpritesheet({ frameSrcs: selected });
       const view = await saveSpritesheet(sheet.dataUrl);
-      applyView(view);
+      await applyView(view);
       setStatus(framesStatus, view.previewGifUrl
         ? "PNG, Aseprite and animated preview saved."
         : "PNG and Aseprite saved. Animated preview could not be built.", "success");
@@ -202,7 +221,7 @@ export function mountApp(root: HTMLElement) {
     try {
       await persistBeforeNavigation();
       const view = await newProject(name.trim());
-      applyView(view);
+      await applyView(view);
       setStatus(spriteStatus, "", "info");
       setStatus(framesStatus, "", "info");
       store.set({ savedProjects: await listProjects() });
@@ -281,7 +300,7 @@ export function mountApp(root: HTMLElement) {
       try {
         await persistBeforeNavigation();
         const view = await loadProject(name);
-        applyView(view);
+        await applyView(view);
         toast(`Loaded '${name}'`);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Load failed";
@@ -299,7 +318,7 @@ export function mountApp(root: HTMLElement) {
     store.set({ navigating: true });
     try {
       await persistDraft();
-      applyView(await changeSprite(action, value));
+      await applyView(await changeSprite(action, value));
     } catch (err) { toast(err instanceof Error ? err.message : "Could not update sprite"); }
     finally { store.set({ navigating: false }); }
   }
@@ -320,7 +339,7 @@ export function mountApp(root: HTMLElement) {
     store.set({ navigating: true });
     try {
       await persistDraft();
-      applyView(await changeAnimation(action, value));
+      await applyView(await changeAnimation(action, value));
     } catch (err) { toast(err instanceof Error ? err.message : "Could not update animation"); }
     finally { store.set({ navigating: false }); }
   }
@@ -337,6 +356,7 @@ export function mountApp(root: HTMLElement) {
   async function persistDraft() {
     window.clearTimeout(selectionTimer);
     await selectionPending;
+    await music.persist();
     const state = store.get();
     if (!state.project?.activeSpriteId) return;
     if (state.activeAnimationId) await saveSelection([...state.selectedFrameIndices]);
@@ -361,10 +381,11 @@ export function mountApp(root: HTMLElement) {
   }
 
   // ---- Apply a server view into local state ----
-  function applyView(view: import("./lib/api").ProjectView) {
+  async function applyView(view: import("./lib/api").ProjectView) {
     setStatus(spriteStatus, "");
     setStatus(framesStatus, "");
     setActiveProject(view);
+    await music.openProject(view.name);
     const patch = { ...hydrateFromView(view), status: "idle" as const, errorMessage: null };
     store.set(patch);
     promptInput.value = view.spritePrompt;
@@ -382,6 +403,12 @@ export function mountApp(root: HTMLElement) {
       state.status === "generating-video" ||
       state.status === "extracting-frames";
 
+    music.setBusy(busy);
+    spriteTab.disabled = musicTab.disabled = busy;
+    spriteTab.setAttribute("aria-pressed", String(workspace === "sprites"));
+    musicTab.setAttribute("aria-pressed", String(workspace === "music"));
+    root.querySelector<HTMLElement>("#sprites-workspace")!.hidden = workspace !== "sprites";
+    root.querySelector<HTMLElement>("#music-workspace")!.hidden = workspace !== "music";
     welcome.hidden = !!state.project;
     editor.hidden = !state.project;
     for (const button of [homeNew, homeOpen, closeBtn, newBtn, saveBtn, loadBtn, addSpriteBtn, renameSpriteBtn, addAnimationBtn, renameAnimationBtn]) button.disabled = busy;
@@ -486,7 +513,7 @@ export function mountApp(root: HTMLElement) {
   ])
     .then(([health, projects, imageModelsResp, videoModelsResp]) => {
       if (!health.hasApiKey) {
-        toast("OPENROUTER_API_KEY is missing. Add it to .env before generating assets.");
+        toast("OPENROUTER_API_KEY is missing. Add it to .env to generate characters and animations.");
         setStatus(
           spriteStatus,
           "OPENROUTER_API_KEY is missing on the server. Add it to .env and restart.",
@@ -578,7 +605,7 @@ function renderShell(): string {
       <div class="welcome__content">
         <span class="welcome__eyebrow">AI Game Studio</span>
         <h1>Bring your next game to life.</h1>
-        <p>Create a project to keep your sprites and animations together.</p>
+        <p>Create a project to keep your characters, animations and sounds together.</p>
         <div class="welcome__actions">
           <button id="home-new" class="btn btn--primary" type="button">${plusIcon} New Project</button>
           <button id="home-open" class="btn btn--secondary" type="button">${folderIcon} Open</button>
@@ -594,7 +621,7 @@ function renderShell(): string {
             <span></span><span></span><span></span>
             <span></span><span></span><span></span>
           </span>
-          <span class="app-header__title">Sprite Sheet Builder</span>
+          <span class="app-header__title">AI Game Studio</span>
           <span class="app-header__project">· <span id="project-label"></span></span>
         </div>
 
@@ -620,6 +647,11 @@ function renderShell(): string {
       </header>
 
       <main class="app-main">
+        <nav class="asset-tabs" aria-label="Asset type">
+          <button id="tab-sprites" class="btn btn--secondary" type="button" aria-pressed="true">Characters & Animations</button>
+          <button id="tab-music" class="btn btn--secondary" type="button" aria-pressed="false">Sound &amp; SFX</button>
+        </nav>
+        <div id="sprites-workspace">
         <nav class="sprite-toolbar" aria-label="Project characters">
           <label for="sprite-picker">Characters</label>
           <select id="sprite-picker" class="select"></select>
@@ -718,6 +750,8 @@ function renderShell(): string {
           </section>
 
         </div>
+        </div>
+        <div id="music-workspace" hidden></div>
       </main>
     </div>
   `;
