@@ -1,15 +1,15 @@
 # AGENTS.md
 
-## Music assets
+## Sound & SFX (supersedes earlier Music/OpenRouter-only audio instructions)
 
-- The Music workspace creates named, project-level tracks independently of characters.
-- Use OpenRouter streamed chat completions (`modalities: ["text", "audio"]`, `audio: { format: "mp3" }`, `stream: true`), defaulting to `google/lyria-3-pro-preview`. Read base64 audio from SSE `delta.audio.data`; do not use a speech voice or an undocumented duration/loop API parameter.
-- Store tracks in `music/<name>/music.json` with version 1, draft prompt/model/duration/loop settings, and separate committed output metadata. Optional `.project` fields `music` and `activeMusicId` preserve compatibility with existing version-1 projects.
-- Short clips and loops support 30–90 whole seconds (default 30). Use a blue/gray Looping toggle and inline length validation. Show the animated SVG loading character during generation; the loop preview control is called Test Loop. Duration is prompted, then enforced locally. Loop processing consumes one extra second for a circular crossfade; do not promise musical or rhythmic continuity.
-- Keep original MP3 and processed 48 kHz stereo PCM WAV in isolated revision directories. Commit the manifest atomically only after processing succeeds; failed generation must preserve the previous output.
-- Music writes require explicit `X-Project-Name` and `X-Music-Id`; never fall back to another tab's active track for a write.
-- Save, switching tracks or workspaces, and Close project persist music drafts. Rename moves the track folder and renames the current WAV.
-- Run `npm run build` and `node --import tsx --test tests/*.test.ts` for music and storage changes. Test provider responses are mocked; audio processing uses real ffmpeg.
+- Sound & SFX uses ElevenLabs directly from the server with `ELEVENLABS_API_KEY` in `.env`. This is an explicit exception to the OpenRouter-only boundary; images and video still use OpenRouter.
+- POST `https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128` with `xi-api-key` and JSON `text`, `model_id: "eleven_text_to_sound_v2"`, `duration_seconds`, and `loop`. Read binary MP3; do not use chat completions, SSE, or music-only prompt directives.
+- Duration is Auto (`null`, the default) or a finite number between 0.5 and 30, inclusive. Preserve null through client requests, drafts, output settings, and the ElevenLabs request. Save actual decoded length separately as `output.actualDuration`.
+- Looping uses the provider's native `loop` flag. Preserve decoded samples without local crossfades, trimming, or fades. Keep the animated SVG loading character and Test Loop control.
+- Keep existing `music/<name>/music.json`, `.project` music fields, `/api/music` routes, and X-Music-Id scoping for compatibility. Lyria draft settings adapt to the new model (lengths >30 become Auto); preserve original files and committed metadata.
+- Stage original MP3 and 48 kHz stereo WAV in isolated revisions and atomically commit only after successful processing. Failed generations preserve the previous output.
+- Redact actual provider key values as well as token prefixes from errors. Never expose either provider key to the browser. Health/key warnings distinguish OpenRouter from ElevenLabs.
+- Run `npm run build` and `node --import tsx --test tests/*.test.ts` for sound and storage changes.
 
 ## Current project storage and startup
 

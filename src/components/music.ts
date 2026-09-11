@@ -1,9 +1,9 @@
-interface MusicSettings { prompt: string; model: string; duration: number; loop: boolean }
+interface MusicSettings { prompt: string; model: string; duration: number | null; loop: boolean }
 interface MusicTrack extends MusicSettings {
   id: string;
   name: string;
   audioUrl: string | null;
-  output: (MusicSettings & { createdAt: string; crossfadeSeconds: number }) | null;
+  output: (MusicSettings & { createdAt: string; crossfadeSeconds: number; actualDuration?: number }) | null;
 }
 interface MusicView {
   tracks: { id: string; name: string }[];
@@ -14,23 +14,23 @@ interface MusicView {
 export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => void,
   askName: (title: string, initial?: string) => Promise<string | null>) {
   root.innerHTML = `
-    <nav class="sprite-toolbar" aria-label="Project music">
-      <label for="music-picker">Music tracks</label>
-      <select id="music-picker" class="select" aria-label="Music track"></select>
-      <button id="music-add" class="btn btn--secondary btn--sm" type="button">+ Add music</button>
+    <nav class="sprite-toolbar" aria-label="Project sounds">
+      <label for="music-picker">Sounds & SFX</label>
+      <select id="music-picker" class="select" aria-label="Sound"></select>
+      <button id="music-add" class="btn btn--secondary btn--sm" type="button">+ Add sound</button>
       <button id="music-rename" class="btn btn--secondary btn--sm" type="button">Rename</button>
-      <span>Named tracks, saved alongside your characters</span>
+      <span>Soundtracks and short effects, saved alongside your characters</span>
     </nav>
-    <p id="music-empty" class="asset-empty">Add a music track to start composing your game’s soundtrack.</p>
+    <p id="music-empty" class="asset-empty">Add a sound to create a short soundtrack, ambient loop, or sound effect.</p>
     <div id="music-fields" class="columns" hidden>
       <section class="card">
-        <h2 class="card__title">1. Describe Music</h2>
+        <h2 class="card__title">1. Describe Sound & SFX</h2>
         <div class="field">
-          <label class="field__label" for="music-prompt">Music Prompt</label>
+          <label class="field__label" for="music-prompt">Sound Prompt</label>
           <textarea id="music-prompt" class="textarea" rows="8" maxlength="20000"
-            placeholder="A peaceful forest village theme. Warm acoustic guitar, soft flute and gentle percussion. 80 BPM, G major."></textarea>
+            placeholder="e.g. A rainy forest soundscape with distant thunder, or a single heavy wooden door creaking open."></textarea>
         </div>
-        <p class="asset-save-note">Describe the scene, mood, instruments and tempo. Music is instrumental by default.</p>
+        <p class="asset-save-note">Create short soundtracks, ambient soundscapes, footsteps, impacts, doors, and other SFX. Describe what happens, the texture, and the environment.</p>
         <div class="field">
           <label class="field__label" for="music-model">Model</label>
           <select id="music-model" class="select"></select>
@@ -46,11 +46,13 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
         </div>
         <div class="field">
           <label class="field__label" for="music-duration">Length (seconds)</label>
-          <input id="music-duration" class="input" type="number" min="30" max="90" step="1" value="30" required aria-describedby="music-length-error" />
+          <button id="sound-auto" class="music-toggle" type="button" aria-pressed="true">Auto length <span id="sound-auto-state">On</span></button>
+          <input id="music-duration" class="input" type="number" min="0.5" max="30" step="any" value="5" required aria-describedby="sound-length-note music-length-error" />
+          <p id="sound-length-note" class="asset-save-note">Auto lets ElevenLabs choose a length from your prompt. Turn it off to choose 0.5–30 seconds.</p>
           <p id="music-length-error" class="field-error" aria-live="polite" hidden></p>
         </div>
         <p id="music-mode-note" class="asset-save-note"></p>
-        <button id="music-generate" class="btn btn--primary btn--block" type="button">Generate Music</button>
+        <button id="music-generate" class="btn btn--primary btn--block" type="button">Generate Sound</button>
         <div id="music-loading" class="music-loading" hidden aria-hidden="true">
           <svg class="music-loading__character" viewBox="0 0 96 96" fill="none">
             <ellipse class="music-loading__shadow" cx="48" cy="84" rx="23" ry="5" fill="currentColor" opacity=".15" />
@@ -64,14 +66,14 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
               <path d="M42 58q6 7 12 0" stroke="white" stroke-width="3" stroke-linecap="round" />
             </g>
           </svg>
-          <span>Composing<span class="music-loading__dots"><span>.</span><span>.</span><span>.</span></span></span>
+          <span>Creating<span class="music-loading__dots"><span>.</span><span>.</span><span>.</span></span></span>
         </div>
         <p id="music-status" class="status" role="status" aria-live="polite"></p>
       </section>
       <section class="card">
-        <h2 class="card__title">3. Music Preview</h2>
+        <h2 class="card__title">3. Sound Preview</h2>
         <div class="music-art" aria-hidden="true"><span>♪</span><span>♫</span><span>♪</span></div>
-        <p id="music-output-meta" class="sheet-footer__meta">No music generated yet</p>
+        <p id="music-output-meta" class="sheet-footer__meta">No sound generated yet</p>
         <audio id="music-audio" controls preload="metadata" hidden></audio>
         <button id="music-audition" class="btn btn--secondary" type="button" hidden>Test Loop</button>
         <p id="music-playback-status" class="status" role="status"></p>
@@ -85,6 +87,9 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
   const model = el<HTMLSelectElement>("music-model");
   const mode = el<HTMLButtonElement>("music-mode");
   const duration = el<HTMLInputElement>("music-duration");
+  const auto = el<HTMLButtonElement>("sound-auto");
+  let autoLength = true;
+  let hasApiKey = false;
   const lengthError = el<HTMLElement>("music-length-error");
   const loading = el<HTMLElement>("music-loading");
   let loopEnabled = false;
@@ -131,24 +136,26 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
     return json as T;
   }
   function settings(): MusicSettings {
-    return { prompt: prompt.value, model: model.value, duration: Number(duration.value), loop: loopEnabled };
+    return { prompt: prompt.value, model: model.value, duration: autoLength ? null : Number(duration.value), loop: loopEnabled };
   }
   function updateDisabled() {
     const busy = externalBusy || working;
     const hasTrack = !!view.track;
-    for (const input of [picker, prompt, model, mode, duration, generate, rename]) input.disabled = busy || !hasTrack;
+    for (const input of [picker, prompt, model, mode, auto, duration, generate, rename]) input.disabled = busy || !hasTrack;
+    duration.disabled ||= autoLength;
+    duration.hidden = autoLength;
     add.disabled = busy || !project;
-    generate.disabled ||= !modelsLoaded || !validLength();
+    generate.disabled ||= !modelsLoaded || !hasApiKey || !validLength();
     audition.disabled = busy || loadingAudio;
   }
   function validLength(): boolean {
-    return /^\d+$/.test(duration.value) && Number.isInteger(duration.valueAsNumber)
-      && duration.valueAsNumber >= 30 && duration.valueAsNumber <= 90;
+    return autoLength || (/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(duration.value)
+      && Number.isFinite(duration.valueAsNumber) && duration.valueAsNumber >= 0.5 && duration.valueAsNumber <= 30);
   }
   function validateLength(): boolean {
     const valid = validLength();
     lengthError.hidden = valid;
-    lengthError.textContent = valid ? "" : "Invalid length. Enter a whole number from 30 to 90 seconds.";
+    lengthError.textContent = valid ? "" : "Invalid length. Enter a number from 0.5 to 30 seconds, or enable Auto length.";
     duration.setAttribute("aria-invalid", String(!valid));
     updateDisabled();
     return valid;
@@ -157,8 +164,10 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
     mode.setAttribute("aria-pressed", String(loopEnabled));
     el("music-loop-state").textContent = loopEnabled ? "On" : "Off";
     el("music-mode-note").textContent = loopEnabled
-      ? "The ending blends into the beginning with a 1-second crossfade. Use Test Loop to check the join: rhythm and harmony may still need another generation."
-      : "Choose 30–90 seconds. The generated recording is trimmed to this length, with a short fade at each edge.";
+      ? "ElevenLabs will generate a looping sound. Use Test Loop to listen across the join."
+      : "Create a short soundtrack, soundscape, or a single effect. The original attack and tail are preserved.";
+    auto.setAttribute("aria-pressed", String(autoLength));
+    el("sound-auto-state").textContent = autoLength ? "On" : "Off";
   }
   function apply(next: MusicView) {
     stopPlayback();
@@ -170,11 +179,13 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
     el("music-fields").hidden = !next.track;
     el("music-empty").hidden = !!next.track;
     status.textContent = "";
-    globalStatus.textContent = "";
+    globalStatus.textContent = hasApiKey || !project ? "" : "ELEVENLABS_API_KEY is missing. Add it to .env and restart the server.";
+    globalStatus.className = "status" + (!hasApiKey && project ? " status--error" : "");
     prompt.value = next.track?.prompt ?? "";
     model.value = next.track?.model ?? "";
     loopEnabled = next.track?.loop ?? false;
-    duration.value = String(next.track?.duration ?? 30);
+    autoLength = next.track?.duration == null;
+    duration.value = String(next.track?.duration ?? 5);
     updateMode();
     validateLength();
     audio.hidden = !next.track?.audioUrl;
@@ -182,8 +193,8 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
     else { audio.removeAttribute("src"); audio.load(); }
     audition.hidden = !next.track?.output?.loop;
     el("music-output-meta").textContent = next.track?.output
-      ? `${next.track.name}.wav · ${next.track.output.duration}s · ${next.track.output.loop ? "Loop · 1s crossfade" : "Short clip"} · 48 kHz stereo`
-      : "No music generated yet";
+      ? `${next.track.name}.wav · ${(next.track.output.actualDuration ?? next.track.output.duration ?? 0).toFixed(2).replace(/\.?0+$/, "")}s · ${next.track.output.loop ? "Loop" : "Sound effect / track"} · 48 kHz stereo`
+      : "No sound generated yet";
     updateDisabled();
   }
   async function persist() {
@@ -199,7 +210,7 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
     updateDisabled();
     try { await action(); }
     catch (error) {
-      const message = error instanceof Error ? error.message : "Could not update music";
+      const message = error instanceof Error ? error.message : "Could not update sound";
       status.textContent = message;
       status.className = "status status--error";
       globalStatus.textContent = view.track ? "" : message;
@@ -214,6 +225,12 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
     loopEnabled = !loopEnabled;
     updateMode();
   });
+  auto.addEventListener("click", () => {
+    dirty = true;
+    autoLength = !autoLength;
+    updateMode();
+    validateLength();
+  });
   picker.addEventListener("change", () => {
     const id = picker.value;
     void run(async () => {
@@ -223,28 +240,28 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
   });
   for (const [button, action] of [[add, "new"], [rename, "rename"]] as const) {
     button.addEventListener("click", () => void run(async () => {
-      const name = await askName(action === "new" ? "Add music track" : "Rename music track", action === "rename" ? view.track?.name : "");
+      const name = await askName(action === "new" ? "Add sound" : "Rename sound", action === "rename" ? view.track?.name : "");
       if (!name) return;
       await persist();
       apply(await request(`/api/music/${action}`, { value: name }));
     }));
   }
   generate.addEventListener("click", () => void run(async () => {
-    if (!prompt.value.trim()) throw new Error("Describe the music first.");
+    if (!prompt.value.trim()) throw new Error("Describe the sound first.");
     await persist();
     stopPlayback();
     status.className = "status";
-    status.textContent = "Generating music and preparing your WAV… This can take a few minutes.";
+    status.textContent = "Generating sound and preparing your WAV… This can take a few minutes.";
     loading.hidden = false;
-    generate.textContent = "Generating Music…";
+    generate.textContent = "Generating Sound…";
     root.setAttribute("aria-busy", "true");
     try {
       apply(await request("/api/music/generate", settings()));
       status.className = "status status--success";
-      status.textContent = "Music saved in your project.";
+      status.textContent = "Sound saved in your project.";
     } finally {
       loading.hidden = true;
-      generate.textContent = "Generate Music";
+      generate.textContent = "Generate Sound";
       root.setAttribute("aria-busy", "false");
     }
   }));
@@ -292,7 +309,8 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
       if (!name) return;
       try {
         if (!modelsLoaded) {
-          const response = await request<{ models: { id: string; label: string }[] }>("/api/models/music");
+          const response = await request<{ models: { id: string; label: string }[]; hasApiKey: boolean }>("/api/models/music");
+          hasApiKey = response.hasApiKey;
           model.replaceChildren(...response.models.map(item => new Option(item.label, item.id)));
           modelsLoaded = true;
         }
@@ -300,7 +318,7 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
       } catch (error) {
         // Permit retry when the project is reopened.
         project = null;
-        globalStatus.textContent = error instanceof Error ? error.message : "Could not load music";
+        globalStatus.textContent = error instanceof Error ? error.message : "Could not load sounds";
         globalStatus.className = "status status--error";
       }
     },

@@ -1,17 +1,17 @@
 # AI Game Studio
 
-Create named characters, animations, and music from text prompts. Generate a shared character reference, then create walking, idle, and other animations with automatically saved PNG and Aseprite files. Compose short music cues and looping background tracks in the same project. Model calls go through OpenRouter.
+Create named characters, animations, and sounds from text prompts. Generate a shared character reference, then create walking, idle, and other animations with automatically saved PNG and Aseprite files. Compose short music cues and looping background tracks in the same project. Image and video calls go through OpenRouter; Sound & SFX uses ElevenLabs directly from the server.
 
 ## Setup
 
-Requires Node.js 20+, `ffmpeg` on your PATH, and an [OpenRouter API key](https://openrouter.ai/keys).
+Requires Node.js 20+, `ffmpeg` on your PATH, an [OpenRouter API key](https://openrouter.ai/keys) for characters/animations, and an ElevenLabs API key for Sound & SFX.
 
 ```bash
 npm install
 cp .env.example .env
 ```
 
-Set `OPENROUTER_API_KEY` in `.env`, then run:
+Set `OPENROUTER_API_KEY` and `ELEVENLABS_API_KEY` in `.env`, then run:
 
 ```bash
 npm run dev
@@ -28,42 +28,40 @@ Open [localhost:5173](http://localhost:5173).
 
 Each character can have multiple animations. **Rename** updates folders and filenames. **Save project** saves draft prompts; switching characters, animations, or closing the project also saves drafts.
 
-## Create music
+## Create Sound & SFX
 
-1. Open a project, choose **Music**, and click **Add music** to name a track.
-2. Describe the scene, mood, instruments, tempo, and key. The server requests instrumental music without vocals.
-3. Enable **Looping** for a loop, or leave it off for a short clip. **Length (seconds)** defaults to 30 and accepts whole numbers from 30 to 90 in either mode. Invalid values show an inline error.
-4. Click **Generate Music**. Google Lyria 3 Pro (`google/lyria-3-pro-preview`) is the default. A bouncing headphone character and cycling dots indicate generation is in progress. The original MP3 and a 48 kHz stereo, 16-bit PCM WAV save automatically.
-5. Play the WAV in the preview. For a loop, **Test Loop** starts three seconds before the end and repeats with Web Audio buffer playback.
+1. Open a project, choose **Sound & SFX**, and click **Add sound**.
+2. Describe a short soundtrack, ambient soundscape, or isolated effect: footsteps on gravel, a wooden door creaking, an impact, or a looping rainy forest. Your prompt is sent directly to ElevenLabs without music-only instructions.
+3. Leave **Auto length** enabled to let ElevenLabs infer duration from the prompt, or turn it off and enter **0.5–30 seconds**, including decimals. Invalid values show an inline error.
+4. Enable **Looping** to request a native loop, then click **Generate Sound**. A bouncing headphone character and cycling dots show generation is in progress.
+5. Play the saved WAV, or use **Test Loop** to listen across the end/start boundary.
 
-Tracks have independent prompts, settings, and outputs. Save, track switching, workspace switching, and Close project persist drafts. Rename moves the folder and updates the current WAV filename. Editing settings does not change an existing recording until you generate again.
+The server calls the [ElevenLabs sound-effect API](https://elevenlabs.io/docs/api-reference/text-to-sound-effects/convert) with `model_id: "eleven_text_to_sound_v2"`, `text`, `loop`, and `duration_seconds`. Auto is stored as `duration: null` in the draft and output settings and passed as `duration_seconds: null`; it is never replaced with a fixed duration. The actual decoded length is saved separately as `output.actualDuration` and displayed in the preview.
 
-### Duration and looping
+The original MP3 and a decoded 48 kHz stereo, 16-bit PCM WAV save automatically. The WAV preserves the full decoded waveform: there is no local crossfade, trimming, or edge fade to alter provider loops or soften short SFX attacks. Listen to the result before using it in your game.
 
-OpenRouter's [audio generation guide](https://openrouter.ai/docs/guides/overview/multimodal/audio) uses streamed chat completions with `modalities: ["text", "audio"]` and `delta.audio.data`. The integration requests MP3 without a speech voice, using the [Lyria 3 Pro model](https://openrouter.ai/google/lyria-3-pro-preview?view=api). No undocumented numeric duration or loop parameter is sent.
+Sounds have independent prompts, settings, and outputs. Save, switching assets/workspaces, and Close project persist drafts. Rename moves the folder and renames the current WAV. Each generation writes an isolated revision; failed calls or processing preserve the previous recording.
 
-Duration is requested in the prompt, then enforced locally with ffmpeg decoding and PCM trimming. The prompt asks for a small amount of extra audio. A recording shorter than the required length fails with a useful error and preserves the previous output.
+### Existing projects and storage
 
-Loop mode requests a repeating phrase with steady tempo and no intro or outro. A one-second circular crossfade blends the tail into the head, consuming one extra second of source audio while retaining the selected output duration. PCM WAV avoids MP3 encoder padding at the playback boundary. This smooths the waveform transition; it cannot guarantee a beat- or harmony-matched musical loop. Listen to the join and refine the prompt or regenerate when necessary.
-
-Short clips receive 30 ms edge fades. All post-processing is local; model requests go only through the server to OpenRouter.
+For compatibility, Sound & SFX retains the existing `music` storage fields, directories, and API routes. Existing Lyria recordings and their metadata remain intact and playable. Their draft model changes to ElevenLabs when opened; lengths over 30 seconds become Auto for the next generation. This does not shorten or regenerate existing audio.
 
 ```text
 ~/.ai-game-studio/<project>/
-├── .project                       # Characters and music track entries
+├── .project
 ├── sprites/...
-└── music/forest/
-    ├── music.json                 # Draft settings + committed output metadata
+└── music/door/
+    ├── music.json
     └── revisions/<revision>/
-        ├── source.mp3             # Original model output
-        └── forest.wav             # Prepared game asset
+        ├── source.mp3
+        └── door.wav
 ```
 
-The current files are identified by `output.audio` and `output.source` in `music.json`; paths are relative to the track folder. Each generation writes a new revision and commits the manifest only after the WAV is ready. Older successful revisions remain available.
+`output.audio` and `output.source` in `music.json` identify the current files, relative to the asset's folder. Older successful revisions remain available. Requests use `X-Project-Name`; draft, generation, and rename also require `X-Music-Id`, so another tab's selected sound cannot redirect a write.
 
-Music routes are `GET /api/models/music`, `GET /api/music`, and `POST /api/music/{new,load,rename,draft,generate}`. Requests use `X-Project-Name`; draft, generation, and rename also require `X-Music-Id`, so another tab's active track cannot redirect a write. Music can be created in projects with no characters.
+Routes remain `GET /api/models/music`, `GET /api/music`, and `POST /api/music/{new,load,rename,draft,generate}`. The model-list response reports ElevenLabs key availability; health reports `hasApiKey` for OpenRouter and `hasElevenLabsApiKey` for sounds. Either workflow can operate without the other provider's key. Keys stay on the server and are redacted from provider errors.
 
-Run `npm run build` and `node --import tsx --test tests/*.test.ts` to validate changes. Automated music tests use a mocked OpenRouter stream and real local audio processing; they do not incur model charges.
+Run `npm run build` and `node --import tsx --test tests/*.test.ts`. Sound tests mock ElevenLabs responses and use real local audio processing; they do not incur model charges.
 
 ## Find and view your assets
 

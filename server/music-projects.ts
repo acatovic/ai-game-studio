@@ -9,6 +9,7 @@ export interface MusicOutput extends MusicSettings {
   audio: string;
   source: string;
   crossfadeSeconds: number;
+  actualDuration?: number;
   createdAt: string;
 }
 export interface MusicManifest extends MusicSettings {
@@ -30,9 +31,14 @@ export function musicFile(id: string, relative = ""): string {
 
 export async function readMusic(id: string): Promise<MusicManifest> {
   const doc = await readProjectDocument(currentProjectName());
-  if (!doc.music?.some(track => track.id === id)) throw new Error("Music track not found");
+  if (!doc.music?.some(track => track.id === id)) throw new Error("Sound not found");
   const track = JSON.parse(await readFile(musicFile(id, "music.json"), "utf8")) as MusicManifest;
-  if (track.version !== 1 || track.id !== id || track.name !== id) throw new Error("Invalid music manifest");
+  if (track.version !== 1 || track.id !== id || track.name !== id) throw new Error("Invalid sound manifest");
+  // Adapt legacy Lyria draft settings; retain original output metadata and files.
+  if (track.model === "google/lyria-3-pro-preview") {
+    track.model = DEFAULT_MUSIC_MODEL;
+    track.duration = typeof track.duration === "number" && track.duration >= 0.5 && track.duration <= 30 ? track.duration : null;
+  }
   validateMusicSettings(track, true);
   if (track.output) {
     musicFile(id, track.output.audio);
@@ -94,14 +100,14 @@ export async function changeMusic(action: "new" | "load" | "rename", value: stri
   }
   if (doc.music.some(track => track.id.toLowerCase() === value.toLowerCase())) {
     if (action === "rename" && value === id) return musicView(id);
-    throw new Error("A music track with that name already exists");
+    throw new Error("A sound with that name already exists");
   }
   if (action === "new") {
     await mkdir(path.dirname(musicFile(value)), { recursive: true });
     await mkdir(musicFile(value));
     const track: MusicManifest = {
       version: 1, id: value, name: value, prompt: "", model: DEFAULT_MUSIC_MODEL,
-      duration: 30, loop: false, output: null, updatedAt: new Date().toISOString(),
+      duration: null, loop: false, output: null, updatedAt: new Date().toISOString(),
     };
     try {
       await writeJson(musicFile(value, "music.json"), track);
@@ -113,7 +119,7 @@ export async function changeMusic(action: "new" | "load" | "rename", value: stri
       throw error;
     }
   } else {
-    if (!id) throw new Error("Select a music track first");
+    if (!id) throw new Error("Select a sound first");
     const current = await readMusic(id);
     // Reserve the destination so an unrelated folder is never overwritten.
     const destination = musicFile(value);

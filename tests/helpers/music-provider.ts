@@ -1,17 +1,18 @@
-// Loaded only by the music integration test's child process.
+// Loaded only by the sound integration test's child process; no external calls.
 import { readFile } from "node:fs/promises";
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
-  if (String(url) !== "https://openrouter.ai/api/v1/chat/completions") return originalFetch(url, init);
+  if (String(url) !== "https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128") return originalFetch(url, init);
   const body = JSON.parse(String(init?.body));
-  if (body.model !== "google/lyria-3-pro-preview" || !body.stream || body.audio.format !== "mp3") {
-    throw new Error("Unexpected music generation request");
+  if (body.model_id !== "eleven_text_to_sound_v2" || typeof body.loop !== "boolean"
+    || !(body.duration_seconds === null || (body.duration_seconds >= 0.5 && body.duration_seconds <= 30))) {
+    throw new Error("Unexpected sound generation request");
   }
-  if (body.messages[0].content.startsWith("FAIL")) {
-    return Response.json({ error: { message: "Provider rejected sk-or-secret xai-secret" } }, { status: 400 });
+  if (body.text.startsWith("AUTO") && body.duration_seconds !== null) throw new Error("Auto must reach ElevenLabs as null");
+  if (body.text.startsWith("FAIL")) {
+    return Response.json({ detail: { message: "Provider rejected sk-or-secret xai-secret" } }, { status: 400 });
   }
-  const data = body.messages[0].content.startsWith("SHORT")
+  const data = body.text.startsWith("SHORT")
     ? Buffer.from("invalid audio") : await readFile(process.env.MUSIC_TEST_AUDIO!);
-  const events = `data: ${JSON.stringify({ choices: [{ delta: { audio: { data: data.toString("base64") } } }] })}\n\ndata: [DONE]\n\n`;
-  return new Response(events, { headers: { "Content-Type": "text/event-stream" } });
+  return new Response(data, { headers: { "Content-Type": "audio/mpeg" } });
 };

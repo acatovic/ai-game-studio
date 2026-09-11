@@ -5,9 +5,9 @@ await initializeStorage();
 import express, { type Request, type Response, type NextFunction } from "express";
 import path from "node:path";
 import { readFile, mkdir, writeFile, rm } from "node:fs/promises";
-import { MUSIC_MODELS, DEFAULT_MUSIC_MODEL, validateMusicSettings, generateMusic } from "./music.js";
+import { MUSIC_MODELS, DEFAULT_MUSIC_MODEL, validateMusicSettings, generateMusic, redactProviderError } from "./music.js";
 import { changeMusic, musicView, readMusic, saveMusicDraft, commitMusicOutput, musicFile, newMusicRevision } from "./music-projects.js";
-import { decodeMusic, prepareMusicWav } from "./music-audio.js";
+import { decodeMusic, prepareMusicWav, MUSIC_SAMPLE_RATE } from "./music-audio.js";
 import { stageAnimationAssets } from "./animation-assets.js";
 import { existsSync } from "node:fs";
 import {
@@ -107,7 +107,7 @@ function asImageRef(v: unknown): string {
 }
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, hasApiKey: HAS_KEY });
+  res.json({ ok: true, hasApiKey: HAS_KEY, hasElevenLabsApiKey: Boolean(process.env.ELEVENLABS_API_KEY) });
 });
 
 app.get("/api/models/video", (_req, res) => {
@@ -119,7 +119,7 @@ app.get("/api/models/image", (_req, res) => {
 });
 
 app.get("/api/models/music", (_req, res) => {
-  res.json({ models: MUSIC_MODELS, default: DEFAULT_MUSIC_MODEL });
+  res.json({ models: MUSIC_MODELS, default: DEFAULT_MUSIC_MODEL, hasApiKey: Boolean(process.env.ELEVENLABS_API_KEY) });
 });
 
 function musicId(req: Request): string {
@@ -138,7 +138,7 @@ app.post("/api/music/draft", async (req, res) => {
   catch (err) { handleError(err, res); }
 });
 
-app.post("/api/music/generate", requireKey, async (req, res) => {
+app.post("/api/music/generate", async (req, res) => {
   let staged: string | undefined;
   try {
     const id = musicId(req);
@@ -151,10 +151,10 @@ app.post("/api/music/generate", requireKey, async (req, res) => {
     const data = await generateMusic(settings);
     await mkdir(staged, { recursive: true });
     await writeFile(musicFile(id, source), data);
-    const pcm = await decodeMusic(musicFile(id, source), settings.duration + (settings.loop ? 1 : 0));
-    await writeFile(musicFile(id, audio), prepareMusicWav(pcm, settings.duration, settings.loop));
+    const pcm = await decodeMusic(musicFile(id, source));
+    await writeFile(musicFile(id, audio), prepareMusicWav(pcm));
     const view = await commitMusicOutput(id, { ...settings, source, audio,
-      crossfadeSeconds: settings.loop ? 1 : 0, createdAt: new Date().toISOString() });
+      crossfadeSeconds: 0, actualDuration: pcm.length / (MUSIC_SAMPLE_RATE * 4), createdAt: new Date().toISOString() });
     staged = undefined;
     res.json(view);
   } catch (err) {
@@ -387,7 +387,7 @@ function handleError(err: unknown, res: Response) {
 }
 
 function redact(msg: string): string {
-  return msg.replace(/(?:sk-or-|xai-)[A-Za-z0-9_-]+/g, "***");
+  return redactProviderError(msg);
 }
 
 const server = app.listen(PORT, () => {
@@ -395,6 +395,6 @@ const server = app.listen(PORT, () => {
   const port = typeof address === "object" && address ? address.port : PORT;
   console.log(`[server] listening on http://localhost:${port}`);
   if (!HAS_KEY) {
-    console.warn("[server] WARNING: OPENROUTER_API_KEY is missing — endpoints will return 500");
+    console.warn("[server] WARNING: OPENROUTER_API_KEY is missing — character and animation generation are unavailable");
   }
 });

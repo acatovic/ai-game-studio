@@ -513,7 +513,7 @@ export function mountApp(root: HTMLElement) {
   ])
     .then(([health, projects, imageModelsResp, videoModelsResp]) => {
       if (!health.hasApiKey) {
-        toast("OPENROUTER_API_KEY is missing. Add it to .env before generating assets.");
+        toast("OPENROUTER_API_KEY is missing. Add it to .env to generate characters and animations.");
         setStatus(
           spriteStatus,
           "OPENROUTER_API_KEY is missing on the server. Add it to .env and restart.",
@@ -605,7 +605,7 @@ function renderShell(): string {
       <div class="welcome__content">
         <span class="welcome__eyebrow">AI Game Studio</span>
         <h1>Bring your next game to life.</h1>
-        <p>Create a project to keep your characters, animations and music together.</p>
+        <p>Create a project to keep your characters, animations and sounds together.</p>
         <div class="welcome__actions">
           <button id="home-new" class="btn btn--primary" type="button">${plusIcon} New Project</button>
           <button id="home-open" class="btn btn--secondary" type="button">${folderIcon} Open</button>
@@ -649,7 +649,7 @@ function renderShell(): string {
       <main class="app-main">
         <nav class="asset-tabs" aria-label="Asset type">
           <button id="tab-sprites" class="btn btn--secondary" type="button" aria-pressed="true">Characters & Animations</button>
-          <button id="tab-music" class="btn btn--secondary" type="button" aria-pressed="false">Music</button>
+          <button id="tab-music" class="btn btn--secondary" type="button" aria-pressed="false">Sound &amp; SFX</button>
         </nav>
         <div id="sprites-workspace">
         <nav class="sprite-toolbar" aria-label="Project characters">

@@ -1,98 +1,71 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readAudioStream, validateMusicSettings, musicGenerationPrompt, DEFAULT_MUSIC_MODEL, generateMusic } from "../server/music.ts";
-import { MUSIC_SAMPLE_RATE, prepareMusicWav } from "../server/music-audio.ts";
+import { validateMusicSettings, DEFAULT_MUSIC_MODEL, generateMusic, redactProviderError } from "../server/music.ts";
+import { prepareMusicWav } from "../server/music-audio.ts";
 
-const settings = { prompt: "Peaceful forest", model: DEFAULT_MUSIC_MODEL, duration: 30, loop: false };
-const event = (data: string) => `data: ${JSON.stringify({ choices: [{ delta: { audio: { data } } }] })}\r\n\r\n`;
-function stream(text: string, chunkSize = 7) {
-  const encoded = new TextEncoder().encode(text);
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (let offset = 0; offset < encoded.length; offset += chunkSize) controller.enqueue(encoded.slice(offset, offset + chunkSize));
-      controller.close();
-    },
-  });
-}
+const settings = { prompt: "A wooden door creaking open", model: DEFAULT_MUSIC_MODEL, duration: null, loop: false };
 
-test("music settings enforce duration limits, explicit model and loop mode", () => {
-  for (const duration of [30, 45, 90]) assert.equal(validateMusicSettings({ ...settings, duration }).duration, duration);
-  assert.equal(validateMusicSettings({ ...settings, duration: 90, loop: true }).loop, true);
-  for (const duration of [0, -1, 29, 91, 30.5, NaN, "30", null]) {
-    assert.throws(() => validateMusicSettings({ ...settings, duration }), /whole number/);
+test("sound settings allow Auto and decimal 0.5–30-second lengths in both loop modes", () => {
+  for (const loop of [true, false]) {
+    for (const duration of [null, 0.5, 1, 2.75, 30]) {
+      assert.equal(validateMusicSettings({ ...settings, duration, loop }).duration, duration);
+    }
+    for (const duration of [undefined, 0, -1, 0.49, 30.01, 90, NaN, Infinity, "auto", "3"]) {
+      assert.throws(() => validateMusicSettings({ ...settings, duration, loop }), /Invalid length/);
+    }
   }
-  assert.throws(() => validateMusicSettings({ ...settings, duration: 91, loop: true }), /90/);
-  assert.throws(() => validateMusicSettings({ ...settings, model: "arbitrary" }), /model/);
+  assert.throws(() => validateMusicSettings({ ...settings, model: "google/lyria-3-pro-preview" }), /model/);
   assert.throws(() => validateMusicSettings({ ...settings, loop: "true" }), /Loop/);
   assert.throws(() => validateMusicSettings({ ...settings, prompt: "" }), /required/);
   assert.equal(validateMusicSettings({ ...settings, prompt: "" }, true).prompt, "");
-  const prompt = musicGenerationPrompt({ ...settings, loop: true });
-  assert.match(prompt, /32 seconds/);
-  assert.match(prompt, /without an intro/);
-  assert.match(prompt, /No vocals/);
 });
 
-test("audio SSE parser preserves split base64, padded chunks, CRLF and UTF-8", async () => {
-  const data = Buffer.from([0, 255, 4, 55, 97, 128, 43]);
-  const base64 = data.toString("base64");
-  const text = ': keepalive\r\n\r\ndata: {"choices":[{"delta":{"audio":{"transcript":"♪ forêt"}}}]}\r\n\r\n'
-    + event(base64.slice(0, 3)) + event(base64.slice(3))
-    + "data: [DONE]\r\n\r\n";
-  assert.deepEqual(await readAudioStream(stream(text, 1)), data);
-  assert.deepEqual(await readAudioStream(stream(event("YQ==") + event("Yg==") + "data: [DONE]\n\n")), Buffer.from("ab"));
-  await assert.rejects(readAudioStream(stream(event(base64))), /interrupted/);
-  await assert.rejects(readAudioStream(stream("data: [DONE]\n\n")), /did not include audio/);
-  await assert.rejects(readAudioStream(stream('data: {"error":{"message":"provider failed"}}\n\n')), /provider failed/);
-  await assert.rejects(readAudioStream(stream('data: {"choices":[{"finish_reason":"error"}]}\n\n')), /ended: error/);
-});
-
-test("music generator uses OpenRouter streaming audio without a speech voice or invented duration parameter", async () => {
+test("ElevenLabs requests preserve Auto, explicit length, native looping and the user's SFX prompt", async () => {
   const original = globalThis.fetch;
-  const oldKey = process.env.OPENROUTER_API_KEY;
-  process.env.OPENROUTER_API_KEY = "test-key";
+  const oldKey = process.env.ELEVENLABS_API_KEY;
+  process.env.ELEVENLABS_API_KEY = "test-eleven-key";
+  const calls: Record<string, unknown>[] = [];
   globalThis.fetch = async (url, init) => {
-    assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
-    const body = JSON.parse(init!.body as string);
-    assert.equal(body.model, DEFAULT_MUSIC_MODEL);
-    assert.equal(body.stream, true);
-    assert.deepEqual(body.modalities, ["text", "audio"]);
-    assert.deepEqual(body.audio, { format: "mp3" });
-    assert.equal(body.duration, undefined);
-    assert.equal((init!.headers as Record<string, string>).Authorization, "Bearer test-key");
-    return new Response(stream(event("YQ==") + "data: [DONE]\n\n"), { headers: { "Content-Type": "text/event-stream" } });
+    assert.equal(url, "https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128");
+    assert.equal((init!.headers as Record<string, string>)["xi-api-key"], "test-eleven-key");
+    assert.equal((init!.headers as Record<string, string>).Authorization, undefined);
+    assert.equal(init!.redirect, "error");
+    calls.push(JSON.parse(init!.body as string));
+    return new Response(Buffer.from([1, 2, 3]), { headers: { "Content-Type": "audio/mpeg" } });
   };
-  try { assert.deepEqual(await generateMusic(settings), Buffer.from("a")); }
-  finally {
+  try {
+    assert.deepEqual(await generateMusic(settings), Buffer.from([1, 2, 3]));
+    await generateMusic({ ...settings, duration: 0.5, loop: true });
+    assert.deepEqual(calls, [
+      { text: settings.prompt, model_id: DEFAULT_MUSIC_MODEL, duration_seconds: null, loop: false },
+      { text: settings.prompt, model_id: DEFAULT_MUSIC_MODEL, duration_seconds: 0.5, loop: true },
+    ]);
+    globalThis.fetch = async () => Response.json({ detail: { message: "Invalid key test-eleven-key" } }, { status: 401 });
+    await assert.rejects(generateMusic(settings), /Invalid key \*\*\*/);
+    globalThis.fetch = async () => new Response("", { headers: { "Content-Type": "audio/mpeg" } });
+    await assert.rejects(generateMusic(settings), /empty audio/);
+    globalThis.fetch = async () => Response.json({ detail: "no sound" });
+    await assert.rejects(generateMusic(settings), /did not include audio/);
+    process.env.ELEVENLABS_API_KEY = "";
+    await assert.rejects(generateMusic(settings), /ELEVENLABS_API_KEY/);
+  } finally {
     globalThis.fetch = original;
-    if (oldKey === undefined) delete process.env.OPENROUTER_API_KEY;
-    else process.env.OPENROUTER_API_KEY = oldKey;
+    if (oldKey === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = oldKey;
   }
 });
 
-test("WAV preparation produces exact stereo duration and a continuous circular join", () => {
-  // Non-integer frequency gives an intentionally mismatched unprocessed boundary.
-  const frames = 31 * MUSIC_SAMPLE_RATE;
-  const pcm = Buffer.alloc(frames * 4);
-  for (let i = 0; i < frames; i++) {
-    const sample = Math.round(12_000 * Math.sin(2 * Math.PI * 220.37 * i / MUSIC_SAMPLE_RATE));
-    pcm.writeInt16LE(sample, i * 4);
-    pcm.writeInt16LE(-sample, i * 4 + 2);
-  }
-  const wav = prepareMusicWav(pcm, 30, true);
+test("sound WAV encoding preserves every sample including attack, tail and provider loop join", () => {
+  const pcm = Buffer.alloc(48_000 * 4 / 2);
+  pcm.writeInt16LE(32000, 0);
+  pcm.writeInt16LE(-30000, pcm.length - 2);
+  const wav = prepareMusicWav(pcm);
   assert.equal(wav.toString("ascii", 0, 4), "RIFF");
   assert.equal(wav.readUInt16LE(22), 2);
   assert.equal(wav.readUInt32LE(24), 48_000);
-  assert.equal(wav.readUInt32LE(40), 30 * 48_000 * 4);
-  assert.equal(wav.length, 44 + 30 * 48_000 * 4);
-  for (const channel of [0, 1]) {
-    const start = wav.readInt16LE(44 + channel * 2);
-    const end = wav.readInt16LE(wav.length - 4 + channel * 2);
-    assert.equal(start, pcm.readInt16LE(48_000 * 4 + channel * 2));
-    assert.equal(end, pcm.readInt16LE((48_000 - 1) * 4 + channel * 2));
-    assert.ok(Math.abs(end - start) < 400, "join retains the source waveform's natural adjacent-sample change");
-  }
-  const clip = prepareMusicWav(pcm, 30, false);
-  assert.equal(clip.readInt16LE(44), 0);
-  assert.equal(clip.readInt16LE(clip.length - 4), 0);
-  assert.throws(() => prepareMusicWav(pcm.subarray(0, 30 * 48_000 * 4), 30, true), /too short/);
+  assert.equal(wav.readUInt32LE(40), pcm.length);
+  assert.deepEqual(wav.subarray(44), pcm);
+  assert.throws(() => prepareMusicWav(Buffer.alloc(0)), /empty/);
+  assert.throws(() => prepareMusicWav(Buffer.alloc(3)), /Invalid/);
+  assert.equal(redactProviderError("bad sk_secret xai-secret sk-or-secret"), "bad *** *** ***");
 });
