@@ -5,6 +5,7 @@ import {
   animateSprite,
   checkHealth,
   deleteProject,
+  deleteAnimation,
   generateSprite,
   setActiveProject,
   getImageModels,
@@ -21,6 +22,7 @@ import { Store, createInitialState, hydrateFromView } from "./lib/state";
 import { composeSpritesheet } from "./lib/spritesheet";
 import {
   chevronIcon,
+  copyIcon,
   folderIcon,
   frameIcon,
   gridIcon,
@@ -335,7 +337,9 @@ export function mountApp(root: HTMLElement) {
   const animationPicker = root.querySelector<HTMLSelectElement>("#animation-picker")!;
   const addAnimationBtn = root.querySelector<HTMLButtonElement>("#btn-add-animation")!;
   const renameAnimationBtn = root.querySelector<HTMLButtonElement>("#btn-rename-animation")!;
-  async function navigateAnimation(action: "new" | "load" | "rename", value: string) {
+  const duplicateAnimationBtn = root.querySelector<HTMLButtonElement>("#btn-duplicate-animation")!;
+  const deleteAnimationBtn = root.querySelector<HTMLButtonElement>("#btn-delete-animation")!;
+  async function navigateAnimation(action: "new" | "load" | "rename" | "duplicate", value: string) {
     store.set({ navigating: true });
     try {
       await persistDraft();
@@ -352,6 +356,33 @@ export function mountApp(root: HTMLElement) {
     const state = store.get();
     const name = await askName("Rename animation", state.animations.find(a => a.id === state.activeAnimationId)?.name);
     if (name?.trim()) void navigateAnimation("rename", name.trim());
+  });
+  duplicateAnimationBtn.addEventListener("click", async () => {
+    const state = store.get();
+    const current = state.animations.find(a => a.id === state.activeAnimationId);
+    if (!current) return;
+    const base = current.name.replace(/-\d+$/, "");
+    const names = new Set(state.animations.map(a => a.name.toLowerCase()));
+    let suffix = 2;
+    let suggestion: string;
+    do {
+      const ending = `-${suffix++}`;
+      suggestion = `${base.slice(0, 60 - ending.length)}${ending}`;
+    } while (names.has(suggestion.toLowerCase()));
+    const name = await askName("Duplicate animation", suggestion);
+    if (name?.trim()) void navigateAnimation("duplicate", name.trim());
+  });
+  deleteAnimationBtn.addEventListener("click", async () => {
+    const state = store.get();
+    const animation = state.animations.find(a => a.id === state.activeAnimationId);
+    if (!animation || !window.confirm(`Delete animation '${animation.name}' and all its generated files? This can't be undone.`)) return;
+    store.set({ navigating: true });
+    try {
+      await persistDraft();
+      await applyView(await deleteAnimation());
+      toast(`Deleted animation '${animation.name}'`);
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not delete animation"); }
+    finally { store.set({ navigating: false }); }
   });
   async function persistDraft() {
     window.clearTimeout(selectionTimer);
@@ -421,6 +452,10 @@ export function mountApp(root: HTMLElement) {
     root.querySelector<HTMLElement>(".sprite-toolbar > span")!.hidden = !hasCharacter;
     animationPicker.hidden = !hasAnimation;
     renameAnimationBtn.hidden = !hasAnimation;
+    duplicateAnimationBtn.hidden = !hasAnimation;
+    duplicateAnimationBtn.disabled = busy || !hasAnimation;
+    deleteAnimationBtn.hidden = !hasAnimation;
+    deleteAnimationBtn.disabled = busy || !hasAnimation;
     root.querySelector<HTMLElement>('label[for="animation-picker"]')!.hidden = !hasAnimation;
     root.querySelector<HTMLElement>("#animation-fields")!.hidden = !hasAnimation;
     spritePicker.disabled = busy || !hasCharacter;
@@ -697,6 +732,8 @@ function renderShell(): string {
               <select id="animation-picker" class="select"></select>
               <div class="animation-actions">
                 <button id="btn-rename-animation" class="btn btn--secondary btn--sm" type="button">Rename</button>
+                <button id="btn-duplicate-animation" class="btn btn--secondary btn--sm" type="button" title="Duplicate animation" aria-label="Duplicate animation">${copyIcon}</button>
+                <button id="btn-delete-animation" class="btn btn--secondary btn--sm" type="button" title="Delete animation" aria-label="Delete animation">${trashIcon}</button>
                 <button id="btn-add-animation" class="btn btn--secondary btn--sm" type="button">${plusIcon} Add animation</button>
               </div>
             </div>

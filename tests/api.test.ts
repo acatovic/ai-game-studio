@@ -26,6 +26,9 @@ test('API requires explicit project context and serves assets from project stora
     });
     let headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const post = (route: string, body: unknown) => fetch(base + route, { method: 'POST', headers, body: JSON.stringify(body) });
+    const videoModels = await (await fetch(base + '/api/models/video')).json();
+    assert.ok(videoModels.models.some((model: { id: string; label: string; defaultDuration: number }) =>
+      model.id === 'minimax/hailuo-3-max' && model.label === 'MiniMax H3 Max' && model.defaultDuration === 5));
     assert.equal((await post('/api/projects/draft', {})).status, 400);
     let response = await post('/api/projects/new', { name: 'demo' });
     assert.equal(response.status, 200);
@@ -99,7 +102,7 @@ test('API requires explicit project context and serves assets from project stora
     assert.equal(idle.asepriteUrl, null);
     assert.equal(idle.animations.length, 2);
     // The first tab's animation header still targets walking after a second tab switches to idle.
-    response = await post('/api/projects/draft', { spritePrompt: 'hero revised', motionPrompt: 'walk left', spriteModel: 'openai/gpt-image-2', motionModel: 'x-ai/grok-imagine-video' });
+    response = await post('/api/projects/draft', { spritePrompt: 'hero revised', motionPrompt: 'walk left', spriteModel: 'openai/gpt-image-2', motionModel: 'minimax/hailuo-3-max' });
     assert.equal((await response.json()).activeAnimationId, walkingId);
     headers['X-Animation-Id'] = idle.activeAnimationId;
     response = await fetch(base + '/api/projects/current', { headers });
@@ -124,7 +127,57 @@ test('API requires explicit project context and serves assets from project stora
     current = await response.json();
     assert.equal(current.activeAnimationId, 'running');
     assert.equal(current.motionPrompt, 'walk left');
+    assert.equal(current.motionModel, 'minimax/hailuo-3-max');
     assert.equal(current.asepriteUrl, renamed.asepriteUrl.replace('/sprites/scientist/', '/sprites/researcher/'));
+    headers['X-Sprite-Id'] = 'researcher';
+    response = await post('/api/projects/animations/duplicate', { value: 'running-2' });
+    assert.equal(response.status, 200);
+    const duplicate = await response.json();
+    assert.equal(duplicate.activeAnimationId, 'running-2');
+    assert.equal(duplicate.motionPrompt, current.motionPrompt);
+    assert.equal(duplicate.motionModel, current.motionModel);
+    assert.deepEqual(duplicate.selectedFrameIndices, current.selectedFrameIndices);
+    assert.ok(duplicate.spritesheetUrl.endsWith('/running-2.png'));
+    assert.ok(duplicate.asepriteUrl.endsWith('/running-2.aseprite'));
+    assert.deepEqual(Buffer.from(await (await fetch(base + duplicate.asepriteUrl)).arrayBuffer()), ase);
+    assert.equal((await post('/api/projects/animations/duplicate', { value: 'running-2' })).status, 400);
+    // Original scoped requests still access the original after duplication selects the copy.
+    const original = await (await fetch(base + '/api/projects/current', { headers })).json();
+    assert.equal(original.activeAnimationId, 'running');
+    assert.equal(original.asepriteUrl, current.asepriteUrl);
+    assert.equal((await (await post('/api/projects/load', { name: 'demo' })).json()).activeAnimationId, 'running-2');
+    delete headers['X-Animation-Id'];
+    assert.equal((await post('/api/projects/animations/duplicate', { value: 'ambiguous' })).status, 400);
+    assert.equal((await post('/api/projects/animations/delete', {})).status, 400);
+    headers['X-Animation-Id'] = 'missing';
+    assert.equal((await post('/api/projects/animations/delete', {})).status, 400);
+    // Deleting the original in an older tab preserves the currently active duplicate.
+    headers['X-Animation-Id'] = 'running';
+    response = await post('/api/projects/animations/delete', {});
+    assert.equal(response.status, 200);
+    const afterDelete = await response.json();
+    assert.equal(afterDelete.activeAnimationId, 'running-2');
+    assert.deepEqual(afterDelete.animations.map((animation: { id: string }) => animation.id), ['idle', 'running-2']);
+    assert.equal((await fetch(base + current.asepriteUrl)).status, 404);
+    assert.deepEqual(Buffer.from(await (await fetch(base + duplicate.asepriteUrl)).arrayBuffer()), ase);
+    assert.equal((await post('/api/projects/animations/delete', {})).status, 400, 'stale deletion must not remove the next animation');
+    assert.equal((await post('/api/projects/draft', longDraft)).status, 400, 'stale saves must not recreate deleted animations');
+    headers['X-Animation-Id'] = 'running-2';
+    response = await post('/api/projects/animations/delete', {});
+    assert.equal((await response.json()).activeAnimationId, 'idle');
+    headers['X-Animation-Id'] = 'idle';
+    response = await post('/api/projects/animations/delete', {});
+    assert.equal(response.status, 200);
+    const empty = await response.json();
+    assert.deepEqual(empty.animations, []);
+    assert.equal(empty.activeAnimationId, '');
+    assert.deepEqual(empty.frames, []);
+    assert.equal(empty.spritesheetUrl, null);
+    assert.equal((await fetch(base + empty.spriteUrl)).status, 200, 'character reference survives deletion');
+    assert.deepEqual(await readdir(path.join(root, 'demo/sprites/researcher/animations')), []);
+    assert.deepEqual((await (await post('/api/projects/load', { name: 'demo' })).json()).animations, []);
+    delete headers['X-Animation-Id'];
+    assert.equal((await post('/api/projects/animations/new', { value: 'idle' })).status, 200);
     assert.deepEqual(await readdir(root), ['demo']);
     assert.equal((await post('/api/projects/new', { name: '../escape' })).status, 400);
   } finally {

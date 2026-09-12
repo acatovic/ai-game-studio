@@ -28,6 +28,12 @@ Open [localhost:5173](http://localhost:5173).
 
 Each character can have multiple animations. **Rename** updates folders and filenames. **Save project** saves draft prompts; switching characters, animations, or closing the project also saves drafts.
 
+Select an animation and click **Duplicate** to create an independent copy, such as `idle-2`. The new animation keeps the current prompt, model, frame selection, source clips, and generated outputs, and opens automatically so you can edit it.
+
+The **bin button** deletes the selected animation or sound after confirmation, including its generated files. Another item is selected automatically; deleting the last item returns that section to its empty state.
+
+Choose **MiniMax H3 Max** in the animation model selector to generate 5-second clips at 480p through OpenRouter.
+
 ## Create Sound & SFX
 
 1. Open a project, choose **Sound & SFX**, and click **Add sound**.

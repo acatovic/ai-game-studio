@@ -4,6 +4,7 @@ import path from "node:path";
 import { currentProjectName, ensureInsideRoot, projectDir, safeAssetId } from "./files.js";
 import { readProjectDocument, writeProjectDocument, writeJson, type ProjectDocument } from "./projects.js";
 import { DEFAULT_MUSIC_MODEL, validateMusicSettings, type MusicSettings } from "./music.js";
+import { deleteAssetFolder } from "./asset-storage.js";
 
 export interface MusicOutput extends MusicSettings {
   audio: string;
@@ -157,6 +158,19 @@ export async function changeMusic(action: "new" | "load" | "rename", value: stri
     }
   }
   return musicView(value);
+}
+
+export async function deleteMusic(id: string) {
+  safeAssetId(id);
+  const doc = await readProjectDocument(currentProjectName());
+  const index = doc.music?.findIndex(track => track.id === id) ?? -1;
+  if (index < 0) throw new Error("Sound not found");
+  doc.music!.splice(index, 1);
+  if (doc.activeMusicId === id) {
+    doc.activeMusicId = doc.music![Math.min(index, doc.music!.length - 1)]?.id ?? "";
+  }
+  await deleteAssetFolder(musicFile(id), () => writeProjectDocument(doc));
+  return musicView();
 }
 
 export function newMusicRevision(id: string): string {

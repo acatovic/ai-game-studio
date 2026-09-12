@@ -150,6 +150,10 @@ export function saveDraft(draft: { spritePrompt: string; motionPrompt: string; s
   return postJson("/api/projects/draft", draft);
 }
 
-export function changeAnimation(action: "new" | "load" | "rename", value: string): Promise<ProjectView> {
+export function changeAnimation(action: "new" | "load" | "rename" | "duplicate", value: string): Promise<ProjectView> {
   return postJson(`/api/projects/animations/${action}`, { value });
+}
+
+export function deleteAnimation(): Promise<ProjectView> {
+  return postJson("/api/projects/animations/delete", {});
 }

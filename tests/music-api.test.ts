@@ -109,8 +109,35 @@ test("sound lifecycle is project-scoped, preserves failed generations, and survi
     await post("/api/projects/new", { name: "other" });
     headers["X-Project-Name"] = "other";
     assert.equal((await post("/api/music/draft", settings)).status, 400);
+    assert.equal((await post("/api/music/delete", {})).status, 400);
     delete headers["X-Music-Id"];
     assert.deepEqual((await (await get("/api/music")).json()).tracks, []);
+    assert.equal((await post("/api/music/delete", {})).status, 400);
+    headers["X-Project-Name"] = "game";
+    headers["X-Music-Id"] = "village";
+    await post("/api/music/load", { value: "battle" });
+    // The explicit header deletes village while preserving another tab's selected battle.
+    const deleted = await post("/api/music/delete", {});
+    assert.equal(deleted.status, 200);
+    const remaining = await deleted.json();
+    assert.equal(remaining.activeMusicId, "battle");
+    assert.deepEqual(remaining.tracks.map((track: { id: string }) => track.id), ["battle"]);
+    assert.equal((await get(view.track.audioUrl)).status, 404);
+    assert.deepEqual(await readdir(path.join(root, "game/music")), ["battle", "reserved"]);
+    assert.equal((await post("/api/music/delete", {})).status, 400);
+    assert.equal((await post("/api/music/draft", settings)).status, 400);
+    headers["X-Music-Id"] = "battle";
+    const lastDeleted = await post("/api/music/delete", {});
+    assert.equal(lastDeleted.status, 200);
+    const empty = await lastDeleted.json();
+    assert.deepEqual(empty.tracks, []);
+    assert.equal(empty.activeMusicId, "");
+    assert.equal(empty.track, null);
+    delete headers["X-Music-Id"];
+    await post("/api/projects/load", { name: "game" });
+    assert.deepEqual((await (await get("/api/music")).json()).tracks, []);
+    assert.deepEqual(await readdir(path.join(root, "game/music")), ["reserved"]);
+    assert.equal((await post("/api/music/new", { value: "village" })).status, 200);
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       const exited = once(child, "exit"); child.kill(); await exited;
