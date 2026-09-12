@@ -6,7 +6,7 @@ import express, { type Request, type Response, type NextFunction } from "express
 import path from "node:path";
 import { readFile, mkdir, writeFile, rm } from "node:fs/promises";
 import { MUSIC_MODELS, DEFAULT_MUSIC_MODEL, validateMusicSettings, generateMusic, redactProviderError } from "./music.js";
-import { changeMusic, musicView, readMusic, saveMusicDraft, commitMusicOutput, musicFile, newMusicRevision } from "./music-projects.js";
+import { changeMusic, deleteMusic, musicView, readMusic, saveMusicDraft, commitMusicOutput, musicFile, newMusicRevision } from "./music-projects.js";
 import { decodeMusic, prepareMusicWav, MUSIC_SAMPLE_RATE } from "./music-audio.js";
 import { stageAnimationAssets } from "./animation-assets.js";
 import { existsSync } from "node:fs";
@@ -39,6 +39,7 @@ import {
 } from "./files.js";
 import {
   deleteSavedProject,
+  deleteAnimation,
   createProject,
   changeSprite,
   listSavedProjects,
@@ -163,6 +164,11 @@ app.post("/api/music/generate", async (req, res) => {
   }
 });
 
+app.post("/api/music/delete", async (req, res) => {
+  try { res.json(await deleteMusic(musicId(req))); }
+  catch (err) { handleError(err, res); }
+});
+
 app.post("/api/music/:action", async (req, res) => {
   try {
     const action = req.params.action;
@@ -219,10 +225,15 @@ app.post("/api/projects/sprites/:action", async (req, res) => {
   } catch (err) { handleError(err, res); }
 });
 
+app.post("/api/projects/animations/delete", async (_req, res) => {
+  try { res.json(await deleteAnimation()); }
+  catch (err) { handleError(err, res); }
+});
+
 app.post("/api/projects/animations/:action", async (req, res) => {
   try {
     const action = req.params.action;
-    if (action !== "new" && action !== "load" && action !== "rename") throw new Error("Unknown animation action");
+    if (action !== "new" && action !== "load" && action !== "rename" && action !== "duplicate") throw new Error("Unknown animation action");
     res.json(await changeAnimation(action, asString(req.body?.value, "value", 60)));
   } catch (err) { handleError(err, res); }
 });

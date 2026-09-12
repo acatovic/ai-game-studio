@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, rm, writeFile, rename, stat, cp, copyFile } from "node:fs/promises";
 import path from "node:path";
 import { stageAnimationAssets } from "./animation-assets.js";
+import { deleteAssetFolder } from "./asset-storage.js";
 import { readPngDims } from "./files.js";
 import { DEFAULT_IMAGE_MODEL } from "./image.js";
 import { randomUUID } from "node:crypto";
@@ -312,7 +313,54 @@ async function renameCharacterFolder(doc: ProjectDocument, id: string, name: str
   });
 }
 
-export async function changeAnimation(action: "new" | "load" | "rename", value: string): Promise<ProjectView> {
+async function duplicateAnimationFolder(character: CharacterManifest, id: string, name: string): Promise<void> {
+  const source = spriteFile(animationPath(id));
+  const destination = spriteFile(animationPath(name));
+  const original = JSON.parse(await readFile(path.join(source, "animation.json"), "utf8")) as AnimationManifest;
+  const prefix = animationPath(id) + "/";
+  const remap = (file: string): string => {
+    if (!file.startsWith(prefix) || !spriteFile(file).startsWith(source + path.sep)) {
+      throw new Error("Animation asset is outside its animation folder");
+    }
+    return animationPath(name, file.slice(prefix.length));
+  };
+  const animation: AnimationManifest = { ...original, id: name, name, updatedAt: new Date().toISOString(),
+    frames: original.frames.map(remap) };
+  for (const key of ["spritesheet", "aseprite", "previewGif"] as const) {
+    animation[key] = original[key] ? remap(original[key]) : null;
+  }
+  // Reserve an independent folder; publish it only after every copied asset is ready.
+  try { await mkdir(destination); }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") throw new Error("A folder with that name already exists");
+    throw err;
+  }
+  try {
+    for (const entry of await readdir(source)) {
+      await cp(path.join(source, entry), path.join(destination, entry), { recursive: true, force: false, errorOnExist: true });
+    }
+    for (const file of [...animation.frames, animation.spritesheet, animation.aseprite, animation.previewGif]) {
+      if (file) await stat(spriteFile(file));
+    }
+    for (const key of ["spritesheet", "aseprite"] as const) {
+      const old = animation[key];
+      if (!old) continue;
+      const next = path.posix.join(path.posix.dirname(old), `${name}${key === "spritesheet" ? ".png" : ".aseprite"}`);
+      if (old !== next) await copyFile(spriteFile(old), spriteFile(next));
+      animation[key] = next;
+    }
+    await writeJson(path.join(destination, "animation.json"), animation);
+    await writeJson(spriteFile(PROJECT_FILES.manifest), { ...character,
+      animations: [...character.animations, { id: name, name }],
+      activeAnimationId: name, updatedAt: animation.updatedAt });
+  } catch (err) {
+    await rm(destination, { recursive: true, force: true });
+    throw err;
+  }
+}
+
+export async function changeAnimation(action: "new" | "load" | "rename" | "duplicate", value: string): Promise<ProjectView> {
+  if (action === "duplicate" && !projectContext.getStore()?.animationId) throw new Error("Select an animation to duplicate");
   const current = await readManifest();
   const character = await characterManifest();
   let id = current.activeAnimationId;
@@ -321,7 +369,7 @@ export async function changeAnimation(action: "new" | "load" | "rename", value: 
     id = value;
   } else {
     const name = assetName(value);
-    if (character.animations.some(a => a.name.toLowerCase() === name.toLowerCase() && (action === "new" || a.id !== id))) throw new Error("Animation name already exists");
+    if (character.animations.some(a => a.name.toLowerCase() === name.toLowerCase() && (action !== "rename" || a.id !== id))) throw new Error("Animation name already exists");
     if (action === "new") {
       id = name;
       await mkdir(spriteFile("animations"), { recursive: true });
@@ -333,7 +381,8 @@ export async function changeAnimation(action: "new" | "load" | "rename", value: 
       });
     } else {
       if (!id) throw new Error("Add an animation first");
-      await renameAnimationFolder(character, id, name);
+      if (action === "duplicate") await duplicateAnimationFolder(character, id, name);
+      else await renameAnimationFolder(character, id, name);
       return projectContext.run({ ...projectContext.getStore()!, animationId: name }, async () => toView(await readManifest()));
     }
   }
@@ -341,6 +390,23 @@ export async function changeAnimation(action: "new" | "load" | "rename", value: 
   character.updatedAt = new Date().toISOString();
   await writeJson(spriteFile(PROJECT_FILES.manifest), character);
   return projectContext.run({ ...projectContext.getStore()!, animationId: id }, async () => toView(await readManifest()));
+}
+
+export async function deleteAnimation(): Promise<ProjectView> {
+  const id = projectContext.getStore()?.animationId;
+  if (!id) throw new Error("Select an animation to delete");
+  safeAssetId(id);
+  const character = await characterManifest();
+  const index = character.animations.findIndex(animation => animation.id === id);
+  if (index < 0) throw new Error("Animation not found");
+  character.animations.splice(index, 1);
+  if (character.activeAnimationId === id) {
+    character.activeAnimationId = character.animations[Math.min(index, character.animations.length - 1)]?.id ?? "";
+  }
+  character.updatedAt = new Date().toISOString();
+  await deleteAssetFolder(spriteFile(animationPath(id)), () => writeJson(spriteFile(PROJECT_FILES.manifest), character));
+  return projectContext.run({ ...projectContext.getStore()!, animationId: character.activeAnimationId || undefined },
+    async () => toView(await readManifest()));
 }
 
 export async function listSavedProjects(): Promise<{ name: string; updatedAt: string }[]> {

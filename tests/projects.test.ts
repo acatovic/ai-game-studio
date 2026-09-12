@@ -47,6 +47,54 @@ test('named character and animation directories, renames, empty projects, and le
     await within('scientist-male', 'idle', () => p.updateSprite({ motionPrompt: 'idle slowly' }));
     assert.equal((await within('scientist-male', 'walking', p.readManifest)).motionPrompt, '');
     assert.equal((await within('scientist-male', 'idle', p.readManifest)).motionPrompt, 'idle slowly');
+    await within('scientist-male', 'idle', async () => {
+      await writeFile(f.spriteFile('animations/idle/source.mp4'), 'source clip');
+      await writeFile(f.spriteFile('animations/idle/preview.gif'), 'preview');
+      await p.updateSprite({ previewGif: 'animations/idle/preview.gif', motionModel: 'minimax/hailuo-3-max' });
+      const original = await readFile(f.spriteFile('animations/idle/animation.json'), 'utf8');
+      // Duplicate the explicitly scoped animation even if another tab selected walking.
+      await p.changeAnimation('load', 'walking');
+      const copy = await p.changeAnimation('duplicate', 'idle-2');
+      assert.equal(copy.activeAnimationId, 'idle-2');
+      assert.equal(copy.motionPrompt, 'idle slowly');
+      assert.equal(copy.motionModel, 'minimax/hailuo-3-max');
+      assert.deepEqual(copy.selectedFrameIndices, [0]);
+      assert.equal(copy.spritesheetFrameCount, 1);
+      assert.equal(copy.frames[0], '/projects/game/sprites/scientist-male/animations/idle-2/frames/frame-00001.png');
+      assert.ok(copy.spritesheetUrl!.endsWith('/idle-2/idle-2.png'));
+      assert.ok(copy.asepriteUrl!.endsWith('/idle-2/idle-2.aseprite'));
+      assert.ok(copy.previewGifUrl!.endsWith('/idle-2/preview.gif'));
+      assert.deepEqual(await readFile(f.spriteFile('animations/idle-2/idle-2.png')), png);
+      assert.equal(await readFile(f.spriteFile('animations/idle-2/idle-2.aseprite'), 'utf8'), 'aseprite data');
+      assert.equal(await readFile(f.spriteFile('animations/idle-2/source.mp4'), 'utf8'), 'source clip');
+      assert.equal(await readFile(f.spriteFile('animations/idle/animation.json'), 'utf8'), original);
+      assert.equal((await p.openProject('game')).activeAnimationId, 'idle-2');
+      await within('scientist-male', 'idle-2', () => p.updateSprite({ motionPrompt: 'copied idle', selectedFrameIndices: [] }));
+      await writeFile(f.spriteFile('animations/idle-2/frames/frame-00001.png'), 'changed copy');
+      assert.deepEqual(await readFile(f.spriteFile('animations/idle/frames/frame-00001.png')), png);
+      assert.equal(await readFile(f.spriteFile('animations/idle/animation.json'), 'utf8'), original);
+      for (const name of ['idle', 'IDLE', 'idle-2', 'walking']) {
+        await assert.rejects(p.changeAnimation('duplicate', name), /already exists/);
+      }
+      await assert.rejects(p.changeAnimation('duplicate', '---'), /Use a name/);
+      await mkdir(f.spriteFile('animations/untracked'));
+      await writeFile(f.spriteFile('animations/untracked/keep.txt'), 'keep');
+      await assert.rejects(p.changeAnimation('duplicate', 'untracked'), /folder.*exists/);
+      assert.equal(await readFile(f.spriteFile('animations/untracked/keep.txt'), 'utf8'), 'keep');
+      // A broken source output aborts the copy and never publishes a partial animation.
+      await p.updateSprite({ aseprite: 'animations/idle/missing.aseprite' });
+      const beforeFailure = await readFile(f.spriteFile('sprite.json'), 'utf8');
+      await assert.rejects(p.changeAnimation('duplicate', 'failed-copy'), { code: 'ENOENT' });
+      assert.equal(await readFile(f.spriteFile('sprite.json'), 'utf8'), beforeFailure);
+      await assert.rejects(stat(f.spriteFile('animations/failed-copy')), { code: 'ENOENT' });
+      await p.updateSprite({ aseprite: 'animations/idle/idle.aseprite' });
+    });
+    await assert.rejects(within('scientist-male', undefined, () => p.changeAnimation('duplicate', 'ambiguous')), /Select an animation/);
+    const emptyCopy = await within('scientist-male', 'walking', () => p.changeAnimation('duplicate', 'walking-2'));
+    assert.deepEqual(emptyCopy.frames, []);
+    assert.equal(emptyCopy.spritesheetUrl, null);
+    assert.equal(emptyCopy.asepriteUrl, null);
+    await within('scientist-male', 'idle', () => p.changeAnimation('load', 'idle'));
     view = await within('scientist-male', 'idle', () => p.changeAnimation('rename', 'standing'));
     assert.equal(view.activeAnimationId, 'standing');
     assert.ok(view.frames[0].includes('/sprites/scientist-male/animations/standing/frames/'));

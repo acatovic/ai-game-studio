@@ -1,3 +1,5 @@
+import { trashIcon } from "./icons";
+
 interface MusicSettings { prompt: string; model: string; duration: number | null; loop: boolean }
 interface MusicTrack extends MusicSettings {
   id: string;
@@ -19,6 +21,7 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
       <select id="music-picker" class="select" aria-label="Sound"></select>
       <button id="music-add" class="btn btn--secondary btn--sm" type="button">+ Add sound</button>
       <button id="music-rename" class="btn btn--secondary btn--sm" type="button">Rename</button>
+      <button id="music-delete" class="btn btn--secondary btn--sm" type="button" title="Delete sound" aria-label="Delete sound">${trashIcon}</button>
       <span>Soundtracks and short effects, saved alongside your characters</span>
     </nav>
     <p id="music-empty" class="asset-empty">Add a sound to create a short soundtrack, ambient loop, or sound effect.</p>
@@ -96,6 +99,7 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
   const generate = el<HTMLButtonElement>("music-generate");
   const add = el<HTMLButtonElement>("music-add");
   const rename = el<HTMLButtonElement>("music-rename");
+  const remove = el<HTMLButtonElement>("music-delete");
   const audio = el<HTMLAudioElement>("music-audio");
   const audition = el<HTMLButtonElement>("music-audition");
   const status = el<HTMLElement>("music-status");
@@ -141,7 +145,7 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
   function updateDisabled() {
     const busy = externalBusy || working;
     const hasTrack = !!view.track;
-    for (const input of [picker, prompt, model, mode, auto, duration, generate, rename]) input.disabled = busy || !hasTrack;
+    for (const input of [picker, prompt, model, mode, auto, duration, generate, rename, remove]) input.disabled = busy || !hasTrack;
     duration.disabled ||= autoLength;
     duration.hidden = autoLength;
     add.disabled = busy || !project;
@@ -175,7 +179,7 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
     dirty = false;
     picker.replaceChildren(...next.tracks.map(track => new Option(track.name, track.id)));
     picker.value = next.activeMusicId;
-    picker.hidden = rename.hidden = !next.track;
+    picker.hidden = rename.hidden = remove.hidden = !next.track;
     el("music-fields").hidden = !next.track;
     el("music-empty").hidden = !!next.track;
     status.textContent = "";
@@ -246,6 +250,12 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
       apply(await request(`/api/music/${action}`, { value: name }));
     }));
   }
+  remove.addEventListener("click", () => void run(async () => {
+    const track = view.track;
+    if (!track || !window.confirm(`Delete sound '${track.name}' and all its audio files? This can't be undone.`)) return;
+    stopPlayback();
+    apply(await request("/api/music/delete", {}));
+  }));
   generate.addEventListener("click", () => void run(async () => {
     if (!prompt.value.trim()) throw new Error("Describe the sound first.");
     await persist();

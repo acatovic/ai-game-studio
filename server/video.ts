@@ -1,11 +1,6 @@
 // Image-to-video generation via OpenRouter /api/v1/videos with polling.
-// Model: x-ai/grok-imagine-video
 // Flow: submit job → poll polling_url every few seconds → on `completed`, return unsigned_urls[0]
-//
-// The downloader in server/files.ts fetches the returned URL without auth, which works for
-// the unsigned_urls returned by OpenRouter on completion. If unsigned_urls is missing we
-// fall back to the authenticated content endpoint and inline the auth via a query param —
-// see resolveDownloadableUrl below.
+// Downloads use authorization headers only for OpenRouter-hosted URLs.
 
 import { prepareVideoReference } from "./video-reference.js";
 
@@ -14,6 +9,7 @@ const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 export const VIDEO_MODELS = [
   { id: "x-ai/grok-imagine-video", label: "Grok Imagine Video", defaultDuration: 2 },
   { id: "minimax/hailuo-3", label: "MiniMax H3", defaultDuration: 5 },
+  { id: "minimax/hailuo-3-max", label: "MiniMax H3 Max", defaultDuration: 5 },
   { id: "bytedance/seedance-2.0", label: "Seedance 2.0", defaultDuration: 4 },
 ] as const;
 
@@ -79,6 +75,7 @@ export async function generateSpriteMotionVideo(
 
   const fullText = `${text.trim()}\n\n${CHROMA_DIRECTIVE}`;
   const videoReference = await prepareVideoReference(image);
+  const reference = { type: "image_url", image_url: { url: videoReference } };
 
   const submitRes = await fetch(`${OPENROUTER_BASE}/videos`, {
     method: "POST",
@@ -90,12 +87,10 @@ export async function generateSpriteMotionVideo(
       model,
       prompt: fullText,
       duration,
-      input_references: [
-        {
-          type: "image_url",
-          image_url: { url: videoReference },
-        },
-      ],
+      // H3 Max uses first-frame image-to-video. Keep its resolution at the cheaper tier.
+      ...(model === "minimax/hailuo-3-max"
+        ? { resolution: "480p", frame_images: [{ ...reference, frame_type: "first_frame" }] }
+        : { input_references: [reference] }),
     }),
   });
 
