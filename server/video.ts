@@ -3,14 +3,16 @@
 // Downloads use authorization headers only for OpenRouter-hosted URLs.
 
 import { prepareVideoReference } from "./video-reference.js";
+import { videoFrameError } from "../src/lib/video-capabilities.js";
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
 export const VIDEO_MODELS = [
-  { id: "x-ai/grok-imagine-video", label: "Grok Imagine Video", defaultDuration: 2 },
-  { id: "minimax/hailuo-3", label: "MiniMax H3", defaultDuration: 5 },
-  { id: "minimax/hailuo-3-max", label: "MiniMax H3 Max", defaultDuration: 5 },
-  { id: "bytedance/seedance-2.0", label: "Seedance 2.0", defaultDuration: 4 },
+  { id: "x-ai/grok-imagine-video", label: "Grok Imagine Video", defaultDuration: 2, supportsEndImage: false, maxKeyframeImages: 1 },
+  { id: "minimax/hailuo-3", label: "MiniMax H3", defaultDuration: 5, supportsEndImage: true, maxKeyframeImages: 2 },
+  // OpenRouter lists both frame types, but its H3 Max route accepts only one per request.
+  { id: "minimax/hailuo-3-max", label: "MiniMax H3 Max", defaultDuration: 5, supportsEndImage: true, maxKeyframeImages: 1 },
+  { id: "bytedance/seedance-2.0", label: "Seedance 2.0", defaultDuration: 4, supportsEndImage: true, maxKeyframeImages: 2 },
 ] as const;
 
 export type VideoModelId = (typeof VIDEO_MODELS)[number]["id"];
@@ -35,8 +37,7 @@ const CHROMA_DIRECTIVE =
   "The subject animates against the uniform green backdrop. " +
   "Preserve the reference character's exact design, proportions, colors and pixel-art style. " +
   "Keep the full character visible with consistent scale and framing. " +
-  "Perform only the requested movement; do not add motion or morph the character. " +
-  "Create a seamless cycle with matching starting and ending poses.";
+  "Perform only the requested movement; do not add motion or morph the character.";
 
 type JobStatus =
   | "pending"
@@ -69,13 +70,36 @@ export async function generateSpriteMotionVideo(
   text: string,
   duration = 2,
   model: VideoModelId = DEFAULT_VIDEO_MODEL,
+  endpoints: { startImage?: string; endImage?: string; characterPrompt?: string } = {},
 ): Promise<VideoDownload> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
 
-  const fullText = `${text.trim()}\n\n${CHROMA_DIRECTIVE}`;
-  const videoReference = await prepareVideoReference(image);
-  const reference = { type: "image_url", image_url: { url: videoReference } };
+  const frameError = videoFrameError(VIDEO_MODELS.find(option => option.id === model)!,
+    !!endpoints.startImage, !!endpoints.endImage);
+  if (frameError) throw new Error(frameError);
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error("Invalid video duration");
+  const transition = endpoints.endImage
+    ? (endpoints.startImage
+      ? "Move naturally from the supplied first frame to the supplied last frame. "
+      : "Choose a natural starting pose and move to the supplied last frame. ") +
+      "Finish in the exact ending pose; this is a transition, not a repeating cycle."
+    : "Create a seamless cycle with matching starting and ending poses.";
+  const characterDescription = endpoints.characterPrompt?.trim();
+  const fullText = `${characterDescription ? `Character: ${characterDescription}\n\nMovement: ` : ""}${text.trim()}\n\n${CHROMA_DIRECTIVE}\n${transition}`;
+  const frameImages = [];
+  if (endpoints.startImage) {
+    frameImages.push({ type: "image_url", image_url: { url: await prepareVideoReference(endpoints.startImage, 1024) },
+      frame_type: "first_frame" });
+  }
+  if (endpoints.endImage) {
+    frameImages.push({ type: "image_url", image_url: { url: await prepareVideoReference(endpoints.endImage, 1024) },
+      frame_type: "last_frame" });
+  }
+  // None means no fixed first frame. Use appearance guidance only in reference
+  // mode; H3 Max supports text/image-to-video, so it uses prompts when no pose is set.
+  const reference = !frameImages.length && model !== "minimax/hailuo-3-max"
+    ? { type: "image_url", image_url: { url: await prepareVideoReference(image) } } : null;
 
   const submitRes = await fetch(`${OPENROUTER_BASE}/videos`, {
     method: "POST",
@@ -87,10 +111,9 @@ export async function generateSpriteMotionVideo(
       model,
       prompt: fullText,
       duration,
-      // H3 Max uses first-frame image-to-video. Keep its resolution at the cheaper tier.
-      ...(model === "minimax/hailuo-3-max"
-        ? { resolution: "480p", frame_images: [{ ...reference, frame_type: "first_frame" }] }
-        : { input_references: [reference] }),
+      // Keep H3 Max at the cheaper resolution tier in either generation mode.
+      ...(model === "minimax/hailuo-3-max" ? { resolution: "480p" } : {}),
+      ...(frameImages.length ? { frame_images: frameImages } : reference ? { input_references: [reference] } : {}),
     }),
   });
 
@@ -119,6 +142,9 @@ export async function generateSpriteMotionVideo(
     const pollUrl = job.polling_url
       ? new URL(job.polling_url, "https://openrouter.ai").toString()
       : `${OPENROUTER_BASE}/videos/${job.id}`;
+    if (!isOpenRouterHost(pollUrl) || !pollUrl.startsWith("https://")) {
+      throw new Error("OpenRouter returned an invalid polling URL");
+    }
 
     const pollRes = await fetch(pollUrl, {
       headers: { Authorization: `Bearer ${apiKey}` },

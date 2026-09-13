@@ -1,5 +1,16 @@
 # AGENTS.md
 
+## Character views and animation endpoints (supersedes single-reference details below)
+
+- Generate side (facing right), front and back views through OpenRouter's Images API. Front/back use the same side reference via `input_references`.
+- Normalize actual visible silhouettes to a shared 1024×1024 transparent canvas, equal height, horizontal center and baseline, without stretching or clipping. Preserve provider originals. Stage all three views in one revision; atomically update only the character manifest after all succeed.
+- Version-2 character manifests add optional `referenceViews` and `referenceAlignment`; `sprite` remains the side-view alias. Legacy single references remain available as Side without rewriting their original files.
+- Animation `startImage` / `endImage` are optional saved PNG poses with source metadata. Pickers offer references and the first/last chronologically included frames of any animation in the same character. Snapshot inputs into the target animation; rename and duplicate remap their paths, and deleting a source does not break saved poses.
+- Endpoint draft and generation writes require explicit `X-Animation-Id`. Persist selections on Save, navigation and Close. End-image requests use `frame_images` and `first_frame` / `last_frame`; omit the seamless-cycle instruction for transitions. Normalize endpoint canvases without independently resizing their characters.
+- Start image **None** persists as `null` and must never inject a first frame, including for H3 Max or end-only requests. With neither endpoint selected, use appearance references where supported; H3 Max uses character and movement prompts.
+- Model capabilities live in `server/video.ts`: Grok accepts only a start frame; MiniMax H3 Max accepts a start OR end frame, at most one per request; MiniMax H3 and Seedance accept both together. Keep `supportsEndImage` separate from `maxKeyframeImages`; listing both supported types does not imply simultaneous support. Share validation with the client and reject unsupported combinations before a provider call.
+- Run `npm run build` and `node --import tsx --test tests/*.test.ts`. Use the synthetic character-provider fixture for UI checks unless live provider generation is intended.
+
 ## Sound & SFX (supersedes earlier Music/OpenRouter-only audio instructions)
 
 - Sound & SFX uses ElevenLabs directly from the server with `ELEVENLABS_API_KEY` in `.env`. This is an explicit exception to the OpenRouter-only boundary; images and video still use OpenRouter.

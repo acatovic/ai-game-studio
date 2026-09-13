@@ -20,6 +20,8 @@ import {
 import { mountMusic } from "./components/music";
 import { Store, createInitialState, hydrateFromView } from "./lib/state";
 import { composeSpritesheet } from "./lib/spritesheet";
+import { REFERENCE_VIEWS, REFERENCE_LABELS, sourceKey, type ImageSourceOption } from "./lib/character";
+import { videoFrameError } from "./lib/video-capabilities";
 import {
   chevronIcon,
   copyIcon,
@@ -64,6 +66,37 @@ export function mountApp(root: HTMLElement) {
   const spritePreview = root.querySelector<HTMLDivElement>("#sprite-preview")!;
   const spriteCaption = root.querySelector<HTMLDivElement>("#sprite-caption")!;
   const spriteStatus = root.querySelector<HTMLDivElement>("#sprite-status")!;
+  const referenceTabs = root.querySelector<HTMLElement>("#reference-tabs")!;
+  for (const view of REFERENCE_VIEWS) {
+    root.querySelector<HTMLButtonElement>(`#reference-tab-${view}`)!.addEventListener("click", () => {
+      store.set({ referenceView: view });
+    });
+  }
+  referenceTabs.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const views = REFERENCE_VIEWS.filter(view => !!store.get().referenceViews[view]);
+    if (!views.length) return;
+    const index = views.indexOf(store.get().referenceView);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? views.length - 1
+      : (index + (event.key === "ArrowRight" ? 1 : -1) + views.length) % views.length;
+    root.querySelector<HTMLButtonElement>(`#reference-tab-${views[next]}`)!.click();
+    root.querySelector<HTMLButtonElement>(`#reference-tab-${views[next]}`)!.focus();
+  });
+  const endpointHint = root.querySelector<HTMLElement>("#endpoint-hint")!;
+  const endpointSelects = {
+    startImage: root.querySelector<HTMLSelectElement>("#start-image")!,
+    endImage: root.querySelector<HTMLSelectElement>("#end-image")!,
+  };
+  for (const key of ["startImage", "endImage"] as const) {
+    endpointSelects[key].addEventListener("change", () => {
+      const state = store.get();
+      const value = endpointSelects[key].value;
+      const selected = [...state.imageSources, ...(state[key] ? [state[key]] : [])]
+        .find(option => sourceKey(option.source) === value) ?? null;
+      store.set({ [key]: selected });
+    });
+  }
 
   const motionInput = root.querySelector<HTMLTextAreaElement>("#motion-prompt")!;
   const motionModelSelect = root.querySelector<HTMLSelectElement>("#motion-model")!;
@@ -134,14 +167,14 @@ export function mountApp(root: HTMLElement) {
       return;
     }
     store.set({ status: "generating-image", errorMessage: null });
-    setStatus(spriteStatus, `${spinner()}Generating reference sprite…`);
+    setStatus(spriteStatus, `${spinner()}Generating and aligning side, front and back views…`);
     try {
       await persistDraft();
       const result = await generateSprite(prompt, store.get().spriteModel);
       await applyView(result.view);
-      store.set({ spriteSrc: result.dataUrl });
-      setStatus(spriteStatus, "Reference sprite ready.", "success");
-      toast("Reference sprite generated");
+      store.set({ spriteSrc: result.dataUrl, referenceView: "side" });
+      setStatus(spriteStatus, "Three aligned reference views ready.", "success");
+      toast("Character views generated");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate sprite";
       store.set({ status: "error", errorMessage: message });
@@ -151,7 +184,7 @@ export function mountApp(root: HTMLElement) {
 
   generateFramesBtn.addEventListener("click", async () => {
     const state = store.get();
-    if (!state.spriteSrc) {
+    if (!state.spriteSrc && !state.startImage) {
       setStatus(framesStatus, "Generate a reference sprite first.", "error");
       return;
     }
@@ -164,7 +197,8 @@ export function mountApp(root: HTMLElement) {
     setStatus(framesStatus, `${spinner()}Generating motion video…`);
     try {
       await persistDraft();
-      const view = await animateSprite(state.spriteSrc, text, state.motionModel);
+      const view = await animateSprite(state.spriteSrc, text, state.motionModel,
+        { startImage: state.startImage?.source ?? null, endImage: state.endImage?.source ?? null });
       await applyView(view);
       await saveCurrentAnimation();
     } catch (err) {
@@ -392,7 +426,8 @@ export function mountApp(root: HTMLElement) {
     if (!state.project?.activeSpriteId) return;
     if (state.activeAnimationId) await saveSelection([...state.selectedFrameIndices]);
     await saveDraft({ spritePrompt: state.spritePrompt, motionPrompt: state.motionPrompt,
-      spriteModel: state.spriteModel, motionModel: state.motionModel });
+      spriteModel: state.spriteModel, motionModel: state.motionModel,
+      startImage: state.startImage?.source ?? null, endImage: state.endImage?.source ?? null });
   }
   async function persistBeforeNavigation() {
     if (store.get().project) await persistDraft();
@@ -413,12 +448,15 @@ export function mountApp(root: HTMLElement) {
 
   // ---- Apply a server view into local state ----
   async function applyView(view: import("./lib/api").ProjectView) {
+    const sameCharacter = store.get().project?.activeSpriteId === view.project.activeSpriteId
+      && store.get().currentProjectName === view.name;
     setStatus(spriteStatus, "");
     setStatus(framesStatus, "");
     setActiveProject(view);
     await music.openProject(view.name);
     const patch = { ...hydrateFromView(view), status: "idle" as const, errorMessage: null };
-    store.set(patch);
+    store.set({ ...patch, referenceView: sameCharacter && patch.referenceViews?.[store.get().referenceView]
+      ? store.get().referenceView : "side" });
     promptInput.value = view.spritePrompt;
     motionInput.value = view.motionPrompt;
   }
@@ -474,14 +512,26 @@ export function mountApp(root: HTMLElement) {
     spritePicker.value = project?.activeSpriteId ?? "";
     generateSpriteBtn.disabled = busy || !hasCharacter;
     spriteModelSelect.disabled = busy || !hasCharacter;
-    generateFramesBtn.disabled = busy || !hasAnimation || !state.spriteSrc;
+    const videoModel = state.videoModels.find(model => model.id === state.motionModel);
+    const frameError = videoModel ? videoFrameError(videoModel, !!state.startImage, !!state.endImage) : null;
+    generateFramesBtn.disabled = busy || !hasAnimation || (!state.spriteSrc && !state.startImage) || !!frameError;
     generateSheetBtn.disabled = busy || state.selectedFrameIndices.size === 0;
 
 
-    if (state.spriteSrc) {
-      spritePreview.innerHTML = `<img src="${state.spriteSrc}" alt="Reference sprite" />`;
+    for (const view of REFERENCE_VIEWS) {
+      const tab = root.querySelector<HTMLButtonElement>(`#reference-tab-${view}`)!;
+      tab.disabled = busy || !state.referenceViews[view];
+      tab.setAttribute("aria-selected", String(state.referenceView === view));
+      tab.tabIndex = state.referenceView === view ? 0 : -1;
+      tab.title = state.referenceViews[view] ? `${REFERENCE_LABELS[view]} view` : "Generate Character to create all three views";
+    }
+    spritePreview.setAttribute("aria-labelledby", `reference-tab-${state.referenceView}`);
+    const referenceSrc = state.referenceViews[state.referenceView] ?? (state.referenceView === "side" ? state.spriteSrc : null);
+    if (referenceSrc) {
+      spritePreview.innerHTML = `<img src="${escapeAttr(referenceSrc)}" alt="${REFERENCE_LABELS[state.referenceView]} character reference" />`;
       if (state.spriteDimensions) {
-        spriteCaption.textContent = `${state.project?.sprites.find(s => s.id === state.project?.activeSpriteId)?.name}.png · ${state.spriteDimensions.w} × ${state.spriteDimensions.h} px`;
+        spriteCaption.textContent = `${REFERENCE_LABELS[state.referenceView]} · ${state.spriteDimensions.w} × ${state.spriteDimensions.h} px` +
+          (state.referenceAlignment ? " · Aligned height & center" : " · Generate to add aligned views");
       } else {
         spriteCaption.textContent = "—";
       }
@@ -489,6 +539,28 @@ export function mountApp(root: HTMLElement) {
       spritePreview.innerHTML = `<span class="preview__placeholder">No sprite yet</span>`;
       spriteCaption.textContent = "—";
     }
+
+    for (const key of ["startImage", "endImage"] as const) {
+      const select = endpointSelects[key];
+      const selected = state[key];
+      select.innerHTML = renderImageSourceOptions(state.imageSources, selected,
+        key === "startImage" ? "None" : "None · seamless loop");
+      select.value = sourceKey(selected?.source ?? null);
+      select.disabled = busy || !hasAnimation;
+      const preview = root.querySelector<HTMLElement>(`#${key === "startImage" ? "start" : "end"}-image-preview`)!;
+      const image = selected?.url;
+      preview.innerHTML = image
+        ? `<img src="${escapeAttr(image)}" alt="${escapeAttr(selected?.label ?? "Side reference")}" />`
+        : `<span>${key === "startImage" ? "No start frame" : "Loop"}</span>`;
+    }
+    endpointHint.textContent = frameError ?? (state.endImage ? (state.startImage
+        ? "Transition between these poses. Selected images are saved with this animation."
+        : "Finish at the selected end pose with no fixed start frame.")
+      : !state.startImage ? (state.motionModel === "minimax/hailuo-3-max"
+        ? "No fixed start frame. H3 Max uses the character and movement prompts."
+        : "No fixed start frame. The character reference guides appearance.")
+      : "Optional: choose a reference or a sequence’s first/last included frame. Poses are saved with this animation.");
+    endpointHint.classList.toggle("status--error", !!frameError);
 
     framesGrid.innerHTML = renderFramesGrid(state.frames, state.selectedFrameIndices);
 
@@ -600,6 +672,18 @@ function renderFramesGrid(frames: string[], selected: Set<number>): string {
   return tiles.join("");
 }
 
+function renderImageSourceOptions(options: ImageSourceOption[], selected: ImageSourceOption | null, empty: string): string {
+  const option = (item: ImageSourceOption) =>
+    `<option value="${escapeAttr(sourceKey(item.source))}">${escapeHtml(item.label)}</option>`;
+  const references = options.filter(item => item.source.kind === "reference");
+  const frames = options.filter(item => item.source.kind === "animation");
+  return `<option value="">${escapeHtml(empty)}</option>` +
+    (selected && !options.some(item => sourceKey(item.source) === sourceKey(selected.source))
+      ? `<optgroup label="Saved pose">${option({ ...selected, label: `${selected.label} · saved` })}</optgroup>` : "") +
+    (references.length ? `<optgroup label="Character references">${references.map(option).join("")}</optgroup>` : "") +
+    (frames.length ? `<optgroup label="Animation frames">${frames.map(option).join("")}</optgroup>` : "");
+}
+
 function renderLoadMenu(projects: { name: string; updatedAt: string }[]): string {
   if (projects.length === 0) {
     return `<div class="load-menu__empty">No saved projects yet</div>`;
@@ -692,7 +776,7 @@ function renderShell(): string {
           <select id="sprite-picker" class="select"></select>
           <button id="btn-rename-sprite" class="btn btn--secondary btn--sm" type="button">Rename</button>
           <button id="btn-add-sprite" class="btn btn--secondary btn--sm" type="button">${plusIcon} Add character</button>
-          <span>One reference image, multiple named animations</span>
+          <span>Three reference views, connected animations</span>
         </nav>
         <div class="columns">
 
@@ -718,7 +802,11 @@ function renderShell(): string {
             <div id="sprite-status" class="status"></div>
             <div class="preview">
               <div class="preview__label">Character Reference</div>
-              <div id="sprite-preview" class="preview__box">
+              <div id="reference-tabs" class="reference-tabs" role="tablist" aria-label="Character view">
+                ${REFERENCE_VIEWS.map(view => `<button id="reference-tab-${view}" type="button" role="tab"
+                  aria-controls="sprite-preview" aria-selected="${view === "side"}">${REFERENCE_LABELS[view]}</button>`).join("")}
+              </div>
+              <div id="sprite-preview" class="preview__box" role="tabpanel" aria-labelledby="reference-tab-side">
                 <span class="preview__placeholder">No sprite yet</span>
               </div>
               <div id="sprite-caption" class="preview__caption">—</div>
@@ -747,6 +835,19 @@ function renderShell(): string {
                 rows="3"
               ></textarea>
             </div>
+            <div class="endpoint-images" role="group" aria-label="Animation start and end images">
+              <div class="field">
+                <label class="field__label" for="start-image">Start image <span class="field__optional">optional</span></label>
+                <div id="start-image-preview" class="endpoint-preview"></div>
+                <select id="start-image" class="select" aria-describedby="endpoint-hint"></select>
+              </div>
+              <div class="field">
+                <label class="field__label" for="end-image">End image <span class="field__optional">optional</span></label>
+                <div id="end-image-preview" class="endpoint-preview"></div>
+                <select id="end-image" class="select" aria-describedby="endpoint-hint"></select>
+              </div>
+            </div>
+            <p id="endpoint-hint" class="endpoint-hint" aria-live="polite"></p>
             <div class="motion-controls">
               <div class="field motion-controls__model">
                 <label class="field__label" for="motion-model">Model</label>

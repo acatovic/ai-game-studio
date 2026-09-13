@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 
 // Video inputs need an opaque backdrop matching extract-frames.sh's chroma key.
 // Work in memory so the original transparent character reference stays intact.
-export async function prepareVideoReference(image: string): Promise<string> {
+export async function prepareVideoReference(image: string, canvasSize?: number): Promise<string> {
   let source: Buffer;
   if (image.startsWith("data:")) {
     const match = /^data:image\/[a-zA-Z0-9.+-]+;base64,([A-Za-z0-9+/=\s]+)$/.exec(image);
@@ -19,7 +19,10 @@ export async function prepareVideoReference(image: string): Promise<string> {
     const child = spawn("ffmpeg", [
       "-hide_banner", "-loglevel", "error", "-i", "pipe:0",
       "-filter_complex",
-      "[0:v]format=rgba,split[foreground][background];" +
+      "[0:v]format=rgba," +
+        (canvasSize ? `scale=${canvasSize}:${canvasSize}:force_original_aspect_ratio=decrease:flags=neighbor,` +
+          `pad=${canvasSize}:${canvasSize}:(ow-iw)/2:(oh-ih)/2:color=0x00b140,` : "") +
+        "split[foreground][background];" +
         "[background]format=rgb24,lutrgb=r=0:g=177:b=64[green];" +
         "[green][foreground]overlay=format=rgb,format=rgb24",
       "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "pipe:1",

@@ -1,4 +1,12 @@
+import type { ReferenceView, ImageSource, ImageSourceOption } from "./character";
+import type { VideoFrameCapabilities } from "./video-capabilities";
+
 export interface ProjectView {
+  referenceViews: Partial<Record<ReferenceView, string>>;
+  referenceAlignment: { canvasSize: number; height: number; top: number; centerX: number } | null;
+  startImage: ImageSourceOption | null;
+  endImage: ImageSourceOption | null;
+  imageSources: ImageSourceOption[];
   project: { version: 1; name: string; activeSpriteId: string; sprites: { id: string; name: string; path: string }[] };
   activeAnimationId: string;
   animations: { id: string; name: string }[];
@@ -18,7 +26,7 @@ export interface ProjectView {
   updatedAt: string;
 }
 
-export interface VideoModelOption {
+export interface VideoModelOption extends VideoFrameCapabilities {
   id: string;
   label: string;
   defaultDuration: number;
@@ -95,11 +103,12 @@ export function generateSprite(
 }
 
 export function animateSprite(
-  image: string,
+  image: string | null,
   text: string,
   model?: string,
+  endpoints?: { startImage: ImageSource | null; endImage: ImageSource | null },
 ): Promise<ProjectView> {
-  return postJson("/api/sprites/animate", { image, text, model });
+  return postJson("/api/sprites/animate", { image, text, model, ...endpoints });
 }
 
 export function getVideoModels(): Promise<VideoModelsResponse> {
@@ -146,7 +155,8 @@ export async function checkHealth(): Promise<{ ok: boolean; hasApiKey: boolean }
 export function changeSprite(action: "new" | "load" | "rename", value: string): Promise<ProjectView> {
   return postJson(`/api/projects/sprites/${action}`, { value });
 }
-export function saveDraft(draft: { spritePrompt: string; motionPrompt: string; spriteModel: string; motionModel: string }): Promise<ProjectView> {
+export function saveDraft(draft: { spritePrompt: string; motionPrompt: string; spriteModel: string; motionModel: string;
+  startImage?: ImageSource | null; endImage?: ImageSource | null }): Promise<ProjectView> {
   return postJson("/api/projects/draft", draft);
 }
 
