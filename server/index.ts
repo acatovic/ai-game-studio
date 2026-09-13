@@ -9,11 +9,11 @@ import { MUSIC_MODELS, DEFAULT_MUSIC_MODEL, validateMusicSettings, generateMusic
 import { changeMusic, deleteMusic, musicView, readMusic, saveMusicDraft, commitMusicOutput, musicFile, newMusicRevision } from "./music-projects.js";
 import { decodeMusic, prepareMusicWav, MUSIC_SAMPLE_RATE } from "./music-audio.js";
 import { stageAnimationAssets } from "./animation-assets.js";
+import { generateCharacterReferences } from "./character-references.js";
 import { existsSync } from "node:fs";
 import {
   DEFAULT_IMAGE_MODEL,
   IMAGE_MODELS,
-  generateSpriteImage,
   isImageModelId,
 } from "./image.js";
 import {
@@ -34,8 +34,7 @@ import {
   safeAssetId,
   downloadVideo,
   ensureInsideRoot,
-  readPngDims,
-  saveBase64Image,
+  spriteFile,
 } from "./files.js";
 import {
   deleteSavedProject,
@@ -51,6 +50,9 @@ import {
   changeAnimation,
   animationPath,
   assetName,
+  stageAnimationImage,
+  commitCharacterReferences,
+  type ProjectManifest,
 } from "./projects.js";
 
 
@@ -240,14 +242,20 @@ app.post("/api/projects/animations/:action", async (req, res) => {
 
 app.post("/api/projects/draft", async (req, res) => {
   try {
-    const patch: Record<string, string> = {
+    const patch: Partial<ProjectManifest> = {
       spritePrompt: validatePrompt(req.body?.spritePrompt, "Character prompt", true),
       motionPrompt: validatePrompt(req.body?.motionPrompt, "Movement prompt", true),
     };
-    for (const key of ["spriteModel", "motionModel"]) {
+    for (const key of ["spriteModel", "motionModel"] as const) {
       const value = req.body?.[key];
       if (typeof value !== "string" || value.length > 2000) throw new Error(`Invalid ${key}: expected a model ID of up to 2,000 characters`);
       patch[key] = value;
+    }
+    const current = await readManifest();
+    for (const key of ["startImage", "endImage"] as const) {
+      if (req.body?.[key] === undefined) continue;
+      if (current.activeAnimationId && !req.get("X-Animation-Id")) throw new Error("Select an animation first (X-Animation-Id is required)");
+      patch[key] = await stageAnimationImage(current, req.body[key], current[key]);
     }
     res.json(toView(await updateSprite(patch)));
   } catch (err) { handleError(err, res); }
@@ -304,6 +312,7 @@ app.post("/api/projects/spritesheet", async (req, res) => {
 });
 
 app.post("/api/sprites/generate", requireKey, async (req, res) => {
+  let staged: string | undefined;
   try {
     const current = await readManifest();
     if (!current.project!.activeSpriteId) throw new Error("Add a character first");
@@ -313,27 +322,25 @@ app.post("/api/sprites/generate", requireKey, async (req, res) => {
       throw new Error("unsupported image model");
     }
     const model = requestedModel ?? DEFAULT_IMAGE_MODEL;
-    const base64 = await generateSpriteImage(prompt, model);
+    const generated = await generateCharacterReferences(prompt, model);
+    staged = generated.directory;
 
-    const character = current.project!.sprites.find(s => s.id === current.project!.activeSpriteId)!;
-    const reference = `${assetName(character.name)}.png`;
-    const refAbs = path.join(activeSpriteDir(), reference);
-    await saveBase64Image(base64, refAbs);
-    const buf = await readFile(refAbs);
-    const dims = readPngDims(buf);
-
-    const m = await updateSprite({
+    await commitCharacterReferences({
       spritePrompt: prompt,
       spriteModel: model,
-      sprite: reference,
-      spriteDimensions: dims,
+      sprite: generated.referenceViews.side,
+      referenceViews: generated.referenceViews,
+      referenceAlignment: generated.referenceAlignment,
+      spriteDimensions: generated.spriteDimensions,
     });
+    staged = undefined;
 
     res.json({
-      view: toView(m),
-      dataUrl: `data:image/png;base64,${base64}`,
+      view: toView(await readManifest()),
+      dataUrl: generated.dataUrl,
     });
   } catch (err) {
+    if (staged) await rm(staged, { recursive: true, force: true }).catch(() => {});
     handleError(err, res);
   }
 });
@@ -341,16 +348,25 @@ app.post("/api/sprites/generate", requireKey, async (req, res) => {
 app.post("/api/sprites/animate", requireKey, async (req, res) => {
   try {
     const current = await readManifest();
-    if (!current.activeAnimationId) throw new Error("Add an animation first");
-    const image = asImageRef(req.body?.image);
+    if (!req.get("X-Animation-Id") || !current.activeAnimationId) throw new Error("Select an animation first (X-Animation-Id is required)");
+    if (req.body?.model !== undefined && !isVideoModelId(req.body.model)) throw new Error("Unsupported video model");
     const text = validatePrompt(req.body?.text, "Movement prompt");
     const model = isVideoModelId(req.body?.model) ? req.body.model : DEFAULT_VIDEO_MODEL;
     const duration =
       typeof req.body?.duration === "number" ? req.body.duration : defaultDurationFor(model);
 
-    const imageInput = await resolveImageInput(image);
+    const startImage = req.body?.startImage === undefined ? current.startImage
+      : await stageAnimationImage(current, req.body.startImage, current.startImage);
+    const endImage = req.body?.endImage === undefined ? current.endImage
+      : await stageAnimationImage(current, req.body.endImage, current.endImage);
+    const readImage = async (relative: string) => `data:image/png;base64,${(await readFile(spriteFile(relative))).toString("base64")}`;
+    const startInput = startImage ? await readImage(startImage.path) : undefined;
+    const imageInput = startInput ?? (current.sprite ? await readImage(current.sprite)
+      : await resolveImageInput(asImageRef(req.body?.image)));
 
-    const video = await generateSpriteMotionVideo(imageInput, text, duration, model);
+    const video = await generateSpriteMotionVideo(imageInput, text, duration, model,
+      { startImage: startInput, endImage: endImage ? await readImage(endImage.path) : undefined,
+        ...(!startImage && !endImage && model === "minimax/hailuo-3-max" ? { characterPrompt: current.spritePrompt } : {}) });
     const prefix = animationPath(current.activeAnimationId, `runs/${crypto.randomUUID()}`);
     const videoAbs = path.join(activeSpriteDir(), prefix, PROJECT_FILES.source);
     await downloadVideo(video.url, videoAbs, video.headers);
@@ -362,6 +378,8 @@ app.post("/api/sprites/animate", requireKey, async (req, res) => {
     const m = await updateSprite({
       motionPrompt: text,
       motionModel: model,
+      startImage,
+      endImage,
       frames,
       selectedFrameIndices: frames.map((_, i) => i),
       spritesheet: null,

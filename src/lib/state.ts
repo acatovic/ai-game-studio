@@ -4,6 +4,7 @@ import type {
   ProjectView,
   VideoModelOption,
 } from "./api";
+import type { ReferenceView, ImageSourceOption } from "./character";
 
 export const DEFAULT_IMAGE_MODEL = "openai/gpt-image-2.5-flare";
 export const DEFAULT_VIDEO_MODEL = "x-ai/grok-imagine-video";
@@ -17,6 +18,12 @@ export type AppStatus =
   | "error";
 
 export interface AppState {
+  referenceViews: Partial<Record<ReferenceView, string>>;
+  referenceAlignment: ProjectView["referenceAlignment"];
+  referenceView: ReferenceView;
+  startImage: ImageSourceOption | null;
+  endImage: ImageSourceOption | null;
+  imageSources: ImageSourceOption[];
   project: ProjectView["project"] | null;
   navigating: boolean;
   activeAnimationId: string;
@@ -44,6 +51,8 @@ export interface AppState {
 
 export function createInitialState(): AppState {
   return {
+    referenceViews: {}, referenceAlignment: null, referenceView: "side",
+    startImage: null, endImage: null, imageSources: [],
     project: null,
     navigating: false,
     activeAnimationId: "",
@@ -79,6 +88,12 @@ export function cacheBust(url: string | null, key: string): string | null {
 export function hydrateFromView(view: ProjectView): Partial<AppState> {
   const v = view.updatedAt;
   return {
+    referenceViews: Object.fromEntries(Object.entries(view.referenceViews ?? (view.spriteUrl ? { side: view.spriteUrl } : {}))
+      .map(([key, url]) => [key, cacheBust(url, v)!])),
+    referenceAlignment: view.referenceAlignment ?? null,
+    startImage: view.startImage ? { ...view.startImage, url: cacheBust(view.startImage.url, v)! } : null,
+    endImage: view.endImage ? { ...view.endImage, url: cacheBust(view.endImage.url, v)! } : null,
+    imageSources: (view.imageSources ?? []).map(option => ({ ...option, url: cacheBust(option.url, v)! })),
     project: view.project,
     activeAnimationId: view.activeAnimationId,
     animations: view.animations,

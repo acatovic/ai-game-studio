@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { prepareVideoReference } from "../server/video-reference.ts";
-import { defaultDurationFor, generateSpriteMotionVideo, type VideoModelId } from "../server/video.ts";
+import { defaultDurationFor, generateSpriteMotionVideo, VIDEO_MODELS, type VideoModelId } from "../server/video.ts";
+import { videoFrameError } from "../src/lib/video-capabilities.ts";
 
 function ffmpeg(input: Buffer, args: string[]): Buffer {
   const result = spawnSync("ffmpeg", ["-hide_banner", "-loglevel", "error", ...args], { input });
@@ -32,7 +33,7 @@ test("video reference composites transparency onto green, preserves black detail
 });
 
 for (const model of ["x-ai/grok-imagine-video", "minimax/hailuo-3", "minimax/hailuo-3-max", "bytedance/seedance-2.0"] satisfies VideoModelId[]) {
-  test(`${model} submission sends the prepared reference to OpenRouter`, async t => {
+  test(`${model} leaves the first frame unset when no start image is selected`, async t => {
     const original = reference();
     const key = process.env.OPENROUTER_API_KEY;
     process.env.OPENROUTER_API_KEY = "test-key";
@@ -44,27 +45,127 @@ for (const model of ["x-ai/grok-imagine-video", "minimax/hailuo-3", "minimax/hai
       assert.equal(url, "https://openrouter.ai/api/v1/videos");
       const body = JSON.parse(init.body as string);
       assert.equal(body.model, model);
-      let image: string;
+      let image: string | undefined;
+      assert.equal(body.frame_images, undefined);
       if (model === "minimax/hailuo-3-max") {
         assert.equal(body.duration, 5);
         assert.equal(body.resolution, "480p");
         assert.equal(body.input_references, undefined);
-        assert.equal(body.frame_images.length, 1);
-        assert.equal(body.frame_images[0].frame_type, "first_frame");
-        assert.equal(body.frame_images[0].type, "image_url");
-        image = body.frame_images[0].image_url.url;
+        assert.match(body.prompt, /Character: Red knight/);
       } else {
-        assert.equal(body.frame_images, undefined);
         assert.equal(body.resolution, undefined);
         image = body.input_references[0].image_url.url;
       }
-      assert.deepEqual([...decode(image).subarray(0, 4)], [0, 177, 64, 255]);
+      if (image) assert.deepEqual([...decode(image).subarray(0, 4)], [0, 177, 64, 255]);
       assert.match(body.prompt, /pixel-art style/);
       return new Response(JSON.stringify({ id: "test", status: "completed", unsigned_urls: ["https://example.com/video.mp4"] }));
     });
     assert.deepEqual(
-      await generateSpriteMotionVideo(original, "idle breathing", defaultDurationFor(model), model),
+      await generateSpriteMotionVideo(original, "idle breathing", defaultDurationFor(model), model,
+        { characterPrompt: "Red knight" }),
       { url: "https://example.com/video.mp4" },
     );
   });
 }
+
+for (const model of ["minimax/hailuo-3", "minimax/hailuo-3-max", "bytedance/seedance-2.0"] satisfies VideoModelId[]) {
+  test(`${model} with only an end image never inserts the character reference as a start frame`, async t => {
+    const original = reference();
+    const key = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "test-key";
+    t.after(() => {
+      if (key === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = key;
+    });
+    t.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      assert.deepEqual(body.frame_images.map((frame: { frame_type: string }) => frame.frame_type), ["last_frame"]);
+      assert.equal(body.input_references, undefined);
+      assert.doesNotMatch(body.prompt, /supplied first frame/);
+      assert.match(body.prompt, /natural starting pose/);
+      return Response.json({ id: "test", status: "completed", unsigned_urls: ["https://example.com/video.mp4"] });
+    });
+    // The unused appearance reference must not even be decoded for end-only generation.
+    await generateSpriteMotionVideo("unused-reference", "turn north", defaultDurationFor(model), model, { endImage: original });
+  });
+}
+
+for (const model of ["minimax/hailuo-3", "bytedance/seedance-2.0"] satisfies VideoModelId[]) {
+  test(`${model} uses ordered first/last frame images and removes the loop instruction for transitions`, async t => {
+    const original = reference();
+    const key = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "test-key";
+    t.after(() => {
+      if (key === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = key;
+    });
+    t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+      assert.equal(url, "https://openrouter.ai/api/v1/videos");
+      const body = JSON.parse(init.body as string);
+      assert.equal(body.input_references, undefined);
+      assert.deepEqual(body.frame_images.map((frame: { frame_type: string }) => frame.frame_type), ["first_frame", "last_frame"]);
+      for (const frame of body.frame_images) {
+        const png = Buffer.from(frame.image_url.url.split(",")[1], "base64");
+        assert.equal(png.readUInt32BE(16), 1024);
+        assert.equal(png.readUInt32BE(20), 1024);
+      }
+      assert.doesNotMatch(body.prompt, /Create a seamless cycle/);
+      assert.match(body.prompt, /exact ending pose/);
+      return Response.json({ id: "test", status: "completed", unsigned_urls: ["https://example.com/video.mp4"] });
+    });
+    await generateSpriteMotionVideo(original, "turn north", defaultDurationFor(model), model,
+      { startImage: original, endImage: original });
+  });
+}
+
+test("H3 Max rejects paired keyframes before preparing images or contacting OpenRouter", async t => {
+  const key = process.env.OPENROUTER_API_KEY;
+  process.env.OPENROUTER_API_KEY = "test-key";
+  t.after(() => {
+    if (key === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = key;
+  });
+  t.mock.method(globalThis, "fetch", async () => { assert.fail("Unsupported pairs must not reach the provider"); });
+  await assert.rejects(generateSpriteMotionVideo("unused", "turn", 5, "minimax/hailuo-3-max",
+    { startImage: "invalid-start", endImage: "invalid-end" }), /H3 Max accepts one keyframe.*MiniMax H3 or Seedance/);
+});
+
+test("H3 Max still accepts a start image alone", async t => {
+  const key = process.env.OPENROUTER_API_KEY;
+  process.env.OPENROUTER_API_KEY = "test-key";
+  t.after(() => {
+    if (key === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = key;
+  });
+  t.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(init.body as string);
+    assert.deepEqual(body.frame_images.map((frame: { frame_type: string }) => frame.frame_type), ["first_frame"]);
+    assert.equal(body.resolution, "480p");
+    assert.equal(body.input_references, undefined);
+    return Response.json({ id: "test", status: "completed", unsigned_urls: ["https://example.com/video.mp4"] });
+  });
+  await generateSpriteMotionVideo("unused", "idle", 5, "minimax/hailuo-3-max", { startImage: reference() });
+});
+
+test("shared UI validation distinguishes supported endpoint types from supported pairs", () => {
+  const max = VIDEO_MODELS.find(model => model.id === "minimax/hailuo-3-max")!;
+  assert.equal(videoFrameError(max, false, false), null);
+  assert.equal(videoFrameError(max, true, false), null);
+  assert.equal(videoFrameError(max, false, true), null);
+  assert.match(videoFrameError(max, true, true)!, /choose a start or an end image, not both/);
+  for (const id of ["minimax/hailuo-3", "bytedance/seedance-2.0"]) {
+    assert.equal(videoFrameError(VIDEO_MODELS.find(model => model.id === id)!, true, true), null);
+  }
+});
+
+test("Grok rejects end images before preparing images or contacting the provider", async t => {
+  const key = process.env.OPENROUTER_API_KEY;
+  process.env.OPENROUTER_API_KEY = "test-key";
+  t.after(() => {
+    if (key === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = key;
+  });
+  t.mock.method(globalThis, "fetch", async () => { assert.fail("Unsupported requests must not reach the provider"); });
+  await assert.rejects(generateSpriteMotionVideo("invalid-image", "turn", 2, "x-ai/grok-imagine-video",
+    { endImage: "invalid-end" }), /supports only a start image/);
+});

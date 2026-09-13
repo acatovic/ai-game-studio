@@ -180,6 +180,7 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
     picker.replaceChildren(...next.tracks.map(track => new Option(track.name, track.id)));
     picker.value = next.activeMusicId;
     picker.hidden = rename.hidden = remove.hidden = !next.track;
+    root.querySelector<HTMLElement>('label[for="music-picker"]')!.hidden = !next.track;
     el("music-fields").hidden = !next.track;
     el("music-empty").hidden = !!next.track;
     status.textContent = "";

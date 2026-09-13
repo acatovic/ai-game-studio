@@ -4,7 +4,9 @@ import { stageAnimationAssets } from "./animation-assets.js";
 import { deleteAssetFolder } from "./asset-storage.js";
 import { readPngDims } from "./files.js";
 import { DEFAULT_IMAGE_MODEL } from "./image.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { REFERENCE_VIEWS, REFERENCE_LABELS, sourceKey, type ReferenceView, type ImageSource,
+  type ImageSourceOption } from "../src/lib/character.js";
 import { PROJECTS_DIR, PROJECT_FILES, projectDir, safeProjectName, safeAssetId, spriteFile,
   currentProjectName, projectContext, ensureInsideRoot } from "./files.js";
 
@@ -18,7 +20,15 @@ export interface ProjectDocument {
 }
 
 export interface AnimationSummary { id: string; name: string }
+export interface SavedAnimationImage {
+  source: ImageSource;
+  label: string;
+  path: string;
+}
+export interface ReferenceAlignment { canvasSize: number; height: number; top: number; centerX: number }
 interface AnimationManifest extends AnimationSummary {
+  startImage?: SavedAnimationImage | null;
+  endImage?: SavedAnimationImage | null;
   motionPrompt: string;
   motionModel: string;
   frames: string[];
@@ -36,12 +46,19 @@ interface CharacterManifest {
   spriteModel: string;
   sprite: string | null;
   spriteDimensions: { w: number; h: number } | null;
+  referenceViews?: Partial<Record<ReferenceView, string>>;
+  referenceAlignment?: ReferenceAlignment | null;
   activeAnimationId: string;
   animations: AnimationSummary[];
   updatedAt: string;
 }
 
 export interface ProjectManifest {
+  referenceViews: Partial<Record<ReferenceView, string>>;
+  referenceAlignment: ReferenceAlignment | null;
+  startImage: SavedAnimationImage | null;
+  endImage: SavedAnimationImage | null;
+  imageSources: ImageSourceOption[];
   project?: ProjectDocument;
   activeAnimationId: string;
   animations: AnimationSummary[];
@@ -62,6 +79,11 @@ export interface ProjectManifest {
 }
 
 export interface ProjectView {
+  referenceViews: Partial<Record<ReferenceView, string>>;
+  referenceAlignment: ReferenceAlignment | null;
+  startImage: ImageSourceOption | null;
+  endImage: ImageSourceOption | null;
+  imageSources: ImageSourceOption[];
   project: ProjectDocument;
   activeAnimationId: string;
   animations: AnimationSummary[];
@@ -83,6 +105,7 @@ export interface ProjectView {
 
 export function emptyManifest(name: string): ProjectManifest {
   return {
+    referenceViews: {}, referenceAlignment: null, startImage: null, endImage: null, imageSources: [],
     name,
     activeAnimationId: "",
     animations: [],
@@ -203,12 +226,29 @@ export async function readManifest(): Promise<ProjectManifest> {
   const context = projectContext.getStore()!;
   if (!context.spriteId && !doc.sprites.length) return { ...emptyManifest(doc.name), project: doc };
   const character = await characterManifest();
+  const referenceViews = character.referenceViews ?? (character.sprite ? { side: character.sprite } : {});
+  const revisionFor = (file: string) => createHash("sha256").update(file).digest("hex").slice(0, 16);
+  const imageSources: ImageSourceOption[] = REFERENCE_VIEWS.flatMap(view => {
+    const url = referenceViews[view];
+    return url ? [{ source: { kind: "reference" as const, view, revision: revisionFor(url) }, label: `${REFERENCE_LABELS[view]} reference`, url }] : [];
+  });
+  for (const summary of character.animations) {
+    const animation = JSON.parse(await readFile(spriteFile(animationPath(summary.id, "animation.json")), "utf8")) as AnimationManifest;
+    const indices = [...new Set(animation.selectedFrameIndices)].filter(i => Number.isInteger(i) && !!animation.frames[i]).sort((a, b) => a - b);
+    if (!indices.length) continue;
+    for (const edge of ["first", "last"] as const) {
+      const url = animation.frames[edge === "first" ? indices[0] : indices[indices.length - 1]];
+      imageSources.push({ source: { kind: "animation", animationId: summary.id, edge, revision: revisionFor(url) },
+        label: `${summary.name} · ${edge} included frame`, url });
+    }
+  }
+  const references = { referenceViews, referenceAlignment: character.referenceAlignment ?? null, imageSources };
   const id = context.animationId ?? character.activeAnimationId;
-  if (!id && !character.animations.length) return { ...emptyManifest(doc.name), ...character,
+  if (!id && !character.animations.length) return { ...emptyManifest(doc.name), ...character, ...references,
     project: { ...doc, activeSpriteId: context.spriteId } };
   if (!character.animations.some(a => a.id === id)) throw new Error("Animation not found");
   const animation = JSON.parse(await readFile(spriteFile(animationPath(id, "animation.json")), "utf8")) as AnimationManifest;
-  return { ...character, ...animation, name: doc.name, activeAnimationId: id,
+  return { ...emptyManifest(doc.name), ...character, ...animation, ...references, name: doc.name, activeAnimationId: id,
     spriteModel: character.spriteModel === "openai/gpt-image-2.5-sunburst" ? DEFAULT_IMAGE_MODEL : character.spriteModel,
     project: { ...doc, activeSpriteId: context.spriteId } };
 }
@@ -217,7 +257,7 @@ export async function updateSprite(patch: Partial<ProjectManifest>): Promise<Pro
   const current = await readManifest();
   const updated = { ...current, ...patch, updatedAt: new Date().toISOString() };
   const character = await characterManifest();
-  for (const key of ["spritePrompt", "spriteModel", "sprite", "spriteDimensions"] as const) {
+  for (const key of ["spritePrompt", "spriteModel", "sprite", "spriteDimensions", "referenceViews", "referenceAlignment"] as const) {
     Object.assign(character, { [key]: updated[key] });
   }
   character.activeAnimationId = current.activeAnimationId;
@@ -225,19 +265,67 @@ export async function updateSprite(patch: Partial<ProjectManifest>): Promise<Pro
   const summary = character.animations.find(a => a.id === current.activeAnimationId)!;
   if (summary) {
   const animation: AnimationManifest = { ...summary, motionPrompt: updated.motionPrompt, motionModel: updated.motionModel,
+    startImage: updated.startImage, endImage: updated.endImage,
     frames: updated.frames, selectedFrameIndices: updated.selectedFrameIndices, spritesheet: updated.spritesheet,
     spritesheetFrameCount: updated.spritesheetFrameCount, aseprite: updated.aseprite, previewGif: updated.previewGif, updatedAt: updated.updatedAt };
   await writeJson(spriteFile(animationPath(summary.id, "animation.json")), animation);
   }
   await writeJson(spriteFile(PROJECT_FILES.manifest), character);
   await writeProjectDocument(updated.project!);
-  return updated;
+  return readManifest();
+}
+
+export async function commitCharacterReferences(patch: Pick<ProjectManifest,
+  "spritePrompt" | "spriteModel" | "sprite" | "spriteDimensions" | "referenceViews" | "referenceAlignment">): Promise<void> {
+  const character = await characterManifest();
+  await writeJson(spriteFile(PROJECT_FILES.manifest), { ...character, ...patch, updatedAt: new Date().toISOString() });
+}
+
+/** Validate a picker value, then copy the exact pose into the target animation.
+ * Saved endpoints survive source regeneration, selection changes, renames and deletion. */
+export function validateImageSource(value: unknown): ImageSource | null {
+  if (value === null) return null;
+  if (!value || typeof value !== "object") throw new Error("Invalid animation image source");
+  const source = value as Record<string, unknown>;
+  if (source.revision !== undefined && (typeof source.revision !== "string" || !/^[a-f0-9]{16}$/.test(source.revision))) {
+    throw new Error("Invalid image source revision");
+  }
+  const revision = source.revision ? { revision: source.revision as string } : {};
+  if (source.kind === "reference" && REFERENCE_VIEWS.includes(source.view as ReferenceView)) {
+    return { kind: "reference", view: source.view as ReferenceView, ...revision };
+  }
+  if (source.kind === "animation" && typeof source.animationId === "string" && (source.edge === "first" || source.edge === "last")) {
+    return { kind: "animation", animationId: safeAssetId(source.animationId), edge: source.edge, ...revision };
+  }
+  throw new Error("Invalid animation image source");
+}
+
+export async function stageAnimationImage(current: ProjectManifest, value: unknown, previous: SavedAnimationImage | null) {
+  const source = validateImageSource(value);
+  if (!source) return null;
+  if (!current.activeAnimationId) throw new Error("Add an animation first");
+  const matches = (candidate: ImageSource) => sourceKey(source.revision ? candidate : { ...candidate, revision: undefined }) === sourceKey(source);
+  if (previous && matches(previous.source)) return previous;
+  const option = current.imageSources.find(option => matches(option.source));
+  if (!option) throw new Error("That image source is no longer available. Choose another pose.");
+  const input = spriteFile(option.url);
+  const png = await readFile(input);
+  if (!readPngDims(png)) throw new Error("Image source is not a PNG");
+  const relative = animationPath(current.activeAnimationId, `inputs/${randomUUID()}.png`);
+  await mkdir(path.dirname(spriteFile(relative)), { recursive: true });
+  await writeFile(spriteFile(relative), png);
+  return { source: option.source, label: option.label, path: relative };
 }
 
 export function toView(m: ProjectManifest): ProjectView {
   const doc = m.project!;
   const base = `/projects/${encodeURIComponent(doc.name)}/sprites/${encodeURIComponent(doc.activeSpriteId)}/`;
   return { project: doc, name: doc.name, activeAnimationId: m.activeAnimationId, animations: m.animations,
+    referenceViews: Object.fromEntries(Object.entries(m.referenceViews).map(([view, file]) => [view, base + file])),
+    referenceAlignment: m.referenceAlignment,
+    startImage: m.startImage ? { source: m.startImage.source, label: m.startImage.label, url: base + m.startImage.path } : null,
+    endImage: m.endImage ? { source: m.endImage.source, label: m.endImage.label, url: base + m.endImage.path } : null,
+    imageSources: m.imageSources.map(option => ({ ...option, url: base + option.url })),
     asepriteUrl: m.aseprite ? base + m.aseprite : null, spritePrompt: m.spritePrompt, spriteModel: m.spriteModel,
     motionPrompt: m.motionPrompt, motionModel: m.motionModel,
     spriteUrl: m.sprite ? base + m.sprite : null, spriteDimensions: m.spriteDimensions,
@@ -271,6 +359,9 @@ async function renameAnimationFolder(character: CharacterManifest, id: string, n
   const newPrefix = animationPath(name) + "/";
   const remap = (file: string) => file.startsWith(oldPrefix) ? newPrefix + file.slice(oldPrefix.length) : file;
   animation.frames = original.frames.map(remap);
+  for (const key of ["startImage", "endImage"] as const) {
+    animation[key] = original[key] ? { ...original[key], path: remap(original[key].path) } : null;
+  }
   for (const key of ["spritesheet", "aseprite", "previewGif"] as const) animation[key] = original[key] ? remap(original[key]) : null;
   const updated = { ...character, animations: character.animations.map(a => a.id === id ? { id: name, name } : a),
     activeAnimationId: character.activeAnimationId === id ? name : character.activeAnimationId,
@@ -295,7 +386,10 @@ async function renameAnimationFolder(character: CharacterManifest, id: string, n
 
 async function renameCharacterFolder(doc: ProjectDocument, id: string, name: string): Promise<void> {
   const character = await characterManifest();
-  const updated = { ...character, sprite: character.sprite ? `${name}.png` : null, updatedAt: new Date().toISOString() };
+  const sprite = character.referenceAlignment ? character.referenceViews?.side ?? character.sprite
+    : character.sprite ? `${name}.png` : null;
+  const updated = { ...character, sprite, referenceViews: character.referenceViews
+    ? { ...character.referenceViews, ...(sprite ? { side: sprite } : {}) } : undefined, updatedAt: new Date().toISOString() };
   const updatedDoc = { ...doc, activeSpriteId: doc.activeSpriteId === id ? name : doc.activeSpriteId,
     sprites: doc.sprites.map(s => s.id === id ? { id: name, name, path: `sprites/${name}/sprite.json` } : s) };
   const target = path.join(projectDir(doc.name), "sprites", name);
@@ -326,6 +420,9 @@ async function duplicateAnimationFolder(character: CharacterManifest, id: string
   };
   const animation: AnimationManifest = { ...original, id: name, name, updatedAt: new Date().toISOString(),
     frames: original.frames.map(remap) };
+  for (const key of ["startImage", "endImage"] as const) {
+    animation[key] = original[key] ? { ...original[key], path: remap(original[key].path) } : null;
+  }
   for (const key of ["spritesheet", "aseprite", "previewGif"] as const) {
     animation[key] = original[key] ? remap(original[key]) : null;
   }

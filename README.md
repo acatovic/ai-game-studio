@@ -1,6 +1,6 @@
 # AI Game Studio
 
-Create named characters, animations, and sounds from text prompts. Generate a shared character reference, then create walking, idle, and other animations with automatically saved PNG and Aseprite files. Compose short music cues and looping background tracks in the same project. Image and video calls go through OpenRouter; Sound & SFX uses ElevenLabs directly from the server.
+Create named characters, animations, and sounds from text prompts. Generate aligned side, front and back references, then create walking, idle and transition animations with automatically saved PNG and Aseprite files. Image and video calls go through OpenRouter; Sound & SFX uses ElevenLabs directly from the server.
 
 ## Setup
 
@@ -22,8 +22,8 @@ Open [localhost:5173](http://localhost:5173).
 ## Create assets
 
 1. Choose **New Project** or **Open**.
-2. Click **Add character**, name it (e.g. `scientist-male`), enter a prompt, and click **Generate Character**.
-3. Click **Add animation**, name it (e.g. `idle`), describe the motion, and click **Generate Animation**. PNG and Aseprite files save automatically.
+2. Click **Add character**, name it (e.g. `scientist-male`), enter a prompt, and click **Generate Character**. Switch between **Side →**, **Front** and **Back** in the reference preview.
+3. Click **Add animation**, name it (e.g. `idle`), describe the motion, optionally choose start/end images, and click **Generate Animation**. PNG and Aseprite files save automatically.
 4. Toggle frames to refine the animation, then click **Update Spritesheet** to rebuild both files.
 
 Each character can have multiple animations. **Rename** updates folders and filenames. **Save project** saves draft prompts; switching characters, animations, or closing the project also saves drafts.
@@ -33,6 +33,22 @@ Select an animation and click **Duplicate** to create an independent copy, such 
 The **bin button** deletes the selected animation or sound after confirmation, including its generated files. Another item is selected automatically; deleting the last item returns that section to its empty state.
 
 Choose **MiniMax H3 Max** in the animation model selector to generate 5-second clips at 480p through OpenRouter.
+
+### Reference views and transitions
+
+Character generation makes three image requests: a side view facing right, then front and back views guided by that same side image. Processing removes the reserved chroma background and fits each silhouette to a 1024×1024 transparent canvas with identical character height, horizontal center and baseline, preserving each view's proportions. Very wide characters share a smaller height so no view clips. Invalid, empty or clipped images fail the whole operation; the previous reference set and animations remain intact. Model-generated anatomy and costume details can still vary and should be reviewed using the tabs.
+
+**Start image** and **End image** offer all available character references and each animation's first/last **included** frame, in chronological order. **None** leaves the start pose unconstrained and sends no first-frame image. With both endpoints unset, generation requests a seamless loop and uses the side reference for appearance guidance; H3 Max instead uses the character and movement prompts because it has no reference-only mode. With an end image, it requests a transition to that pose, without adding an implicit start frame.
+
+For example, `turn-north` can start with `idle-side · last included frame` and end with **Back reference**. Then `step-back` can start with `turn-north · last included frame` and end with `idle-side · first included frame`.
+
+Selected poses are copied into the target animation when its draft is saved, including on navigation and generation. They survive changes, regeneration, rename and deletion of their source. After a source changes, the picker keeps the previous selection under **Saved pose** and offers its latest frame separately. Duplicating an animation copies these inputs too. Clearing a selection and saving removes that endpoint. Endpoint images are fitted to a shared square canvas before video submission; the provider controls how closely the generated motion matches them.
+
+Grok supports a start image only. **MiniMax H3 Max accepts one keyframe per request: either a start image or an end image. MiniMax H3 and Seedance accept both together.** The UI prevents unsupported combinations and explains which model to choose; the server rejects them before calling OpenRouter. Existing selected poses are retained so you can switch models or clear one endpoint.
+
+Requests use OpenRouter's `frame_images` with explicit `first_frame` / `last_frame` roles, never two unordered style references. Model capabilities in `server/video.ts` declare supported endpoint types separately from `maxKeyframeImages`. OpenRouter's model catalogue lists both frame types for H3 Max, but that does not establish that both can be combined; its live route rejects paired keyframes. These limits apply to the OpenRouter route used by this app.
+
+Existing single-reference characters open with their original image in **Side →**. Generate Character to add the full aligned set; old files and existing animations are preserved. Character manifests remain version 2 with optional `referenceViews` and `referenceAlignment`. Animation manifests add optional `startImage` / `endImage` records containing source labels and character-relative snapshot paths.
 
 ## Create Sound & SFX
 
@@ -76,10 +92,15 @@ Projects live in `~/.ai-game-studio/`, outside this repository. Set `AI_GAME_STU
 ```text
 ~/.ai-game-studio/<project>/
 └── sprites/scientist-male/
-    ├── scientist-male.png          # Character reference
     ├── sprite.json
+    ├── references/<revision>/
+    │   ├── side.png               # Aligned character views
+    │   ├── front.png
+    │   ├── back.png
+    │   └── *-original.png         # Original provider images
     └── animations/idle/
         ├── animation.json         # Paths to the current saved files
+        ├── inputs/<id>.png        # Saved start/end poses
         ├── preview.gif
         ├── assets/<revision>/
         │   ├── idle.png
@@ -89,6 +110,8 @@ Projects live in `~/.ai-game-studio/`, outside this repository. Set `AI_GAME_STU
 
 On macOS, press **Cmd+Shift+G** in Finder and enter `~/.ai-game-studio/`.
 
+The `sprite.json` manifest's `referenceViews` identifies the current set; its `sprite` field remains a compatible alias for the side view. Each generation stages all views in one isolated revision and publishes them together.
+
 **To find the current animation files**, open its `animation.json` and look for `spritesheet` and `aseprite`. Those paths are relative to the character folder (`sprites/scientist-male/` in this example). Each update creates a new revision folder; older copies remain and may have different frame counts. Use the manifest paths rather than picking a revision folder at random.
 
 - **In the app:** select the character and animation to view the current spritesheet and looping preview.
@@ -96,3 +119,5 @@ On macOS, press **Cmd+Shift+G** in Finder and enter `~/.ai-game-studio/`.
 - **Aseprite:** open in Aseprite to edit the same frames as an animation at approximately 12 fps.
 
 [Watch the demo](https://www.youtube.com/watch?v=MijheSPXnDo). See [AGENTS.md](AGENTS.md) for implementation details.
+
+Character and transition tests use synthetic OpenRouter responses and real local image/video processing; they do not incur provider charges. Run the build and full test suite before shipping.
