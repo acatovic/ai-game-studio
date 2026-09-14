@@ -10,8 +10,10 @@ const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 export const VIDEO_MODELS = [
   { id: "x-ai/grok-imagine-video", label: "Grok Imagine Video", defaultDuration: 2, supportsEndImage: false, maxKeyframeImages: 1 },
   { id: "minimax/hailuo-3", label: "MiniMax H3", defaultDuration: 5, supportsEndImage: true, maxKeyframeImages: 2 },
-  // OpenRouter lists both frame types, but its H3 Max route accepts only one per request.
-  { id: "minimax/hailuo-3-max", label: "MiniMax H3 Max", defaultDuration: 5, supportsEndImage: true, maxKeyframeImages: 1 },
+  // Verified 2026-09-14: OpenRouter rejects paired frames, while MiniMax rejects
+  // last_frame without first_frame. Despite the discovery metadata, end frames
+  // are unusable on this route; do not inject a start frame when None is selected.
+  { id: "minimax/hailuo-3-max", label: "MiniMax H3 Max", defaultDuration: 5, supportsEndImage: false, maxKeyframeImages: 1 },
   { id: "bytedance/seedance-2.0", label: "Seedance 2.0", defaultDuration: 4, supportsEndImage: true, maxKeyframeImages: 2 },
 ] as const;
 

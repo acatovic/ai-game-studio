@@ -40,10 +40,12 @@ These are the settings supported by the app's OpenRouter routes:
 | --- | --- | --- |
 | Grok Imagine Video | 2 seconds | Start only |
 | MiniMax H3 | 5 seconds | Start, end, or both |
-| MiniMax H3 Max | 5 seconds, 480p | Start or end, one per request |
+| MiniMax H3 Max | 5 seconds, 480p | Start only |
 | Seedance 2.0 | 4 seconds | Start, end, or both |
 
 If a selected model cannot accept your endpoint combination, switch models or clear an endpoint. The app keeps your selections when switching models.
+
+H3 Max's current OpenRouter route rejects two keyframes, and MiniMax rejects an end frame without a start frame. Although OpenRouter lists both frame types, this combination of restrictions makes end images unusable on that route (checked September 14, 2026). Use MiniMax H3 or Seedance when selecting an end image.
 
 ## Connect animations with saved poses
 

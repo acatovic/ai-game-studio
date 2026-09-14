@@ -37,8 +37,13 @@ globalThis.fetch = async (input, init) => {
     return Response.json({ data: [{ b64_json: pngFixture(64, 64, pixels).toString("base64"), media_type: "image/png" }] });
   }
   if (url === "https://openrouter.ai/api/v1/videos") {
-    if (body.model === "minimax/hailuo-3-max" && body.frame_images?.length > 1) {
-      return Response.json({ error: "This model supports a single keyframe image: send either a first_frame or a last_frame, not both" }, { status: 400 });
+    if (body.model === "minimax/hailuo-3-max") {
+      if (body.frame_images?.length > 1) {
+        return Response.json({ error: "This model supports a single keyframe image: send either a first_frame or a last_frame, not both" }, { status: 400 });
+      }
+      if (body.frame_images?.some((frame: { frame_type: string }) => frame.frame_type === "last_frame")) {
+        return Response.json({ error: "invalid params, last_frame requires first_frame for model MiniMax-H3-Max (2013)" }, { status: 400 });
+      }
     }
     if (body.prompt.includes("fail-video")) return Response.json({ error: "Fixture video failure" }, { status: 500 });
     return Response.json({ id: "fixture", status: "completed", unsigned_urls: ["https://fixture.invalid/source.mp4"] });

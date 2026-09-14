@@ -79,7 +79,7 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     const beforeRejectedPair = await readFile(requestsFile, "utf8");
     response = await post("/api/sprites/animate", { text: "turn north", model: "minimax/hailuo-3-max" });
     assert.equal(response.status, 400);
-    assert.match((await response.json()).error, /H3 Max accepts one keyframe/);
+    assert.match((await response.json()).error, /H3 Max supports only a start image through OpenRouter/);
     assert.equal(await readFile(requestsFile, "utf8"), beforeRejectedPair, "reject unsupported pairs before calling OpenRouter");
     const afterRejectedPair = await (await fetch(base + "/api/projects/current", { headers })).json() as ProjectView;
     assert.deepEqual(afterRejectedPair.startImage, selected.startImage);
@@ -168,8 +168,19 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     const endOnly = await ok("/api/projects/load", { name: "demo" });
     assert.equal(endOnly.startImage, null);
     assert.deepEqual(endOnly.endImage, reopened.endImage);
-    // Reloaded None must not fall back to the side reference during generation.
-    await ok("/api/sprites/animate", { text: "turn", model: "minimax/hailuo-3-max" });
+    const beforeRejectedEnd = await readFile(requestsFile, "utf8");
+    response = await post("/api/sprites/animate", { text: "turn", model: "minimax/hailuo-3-max" });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /H3 Max supports only a start image through OpenRouter/);
+    assert.equal(await readFile(requestsFile, "utf8"), beforeRejectedEnd, "reject end-only requests before calling OpenRouter");
+    current = await (await fetch(base + "/api/projects/current", { headers })).json();
+    assert.equal(current.startImage, null, "rejection must not add a first frame");
+    assert.deepEqual(current.endImage, endOnly.endImage);
+    assert.deepEqual(current.frames, endOnly.frames);
+    assert.equal(current.spritesheetUrl, endOnly.spritesheetUrl);
+    assert.equal(current.asepriteUrl, endOnly.asepriteUrl);
+    // Switching to a compatible model keeps the saved end pose and unset start.
+    await ok("/api/sprites/animate", { text: "turn", model: "minimax/hailuo-3" });
     let lastRequest = JSON.parse((await readFile(requestsFile, "utf8")).trim().split("\n").at(-1)!).body;
     assert.deepEqual(lastRequest.frame_images.map((frame: { frame_type: string }) => frame.frame_type), ["last_frame"]);
     await ok("/api/projects/draft", { ...draft, startImage: null, endImage: null });
