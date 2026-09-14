@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import type { ProjectView } from "../src/lib/api.ts";
+import { decodeReference } from "../server/character-references.ts";
 
 test("aligned references and saved endpoint poses survive generations, edits, rename, duplication, deletion and reopen", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "studio-characters-"));
@@ -88,6 +89,13 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     const calls = (await readFile(requestsFile, "utf8")).trim().split("\n").map(line => JSON.parse(line));
     const video = calls.at(-1).body;
     assert.deepEqual(video.frame_images.map((image: { frame_type: string }) => image.frame_type), ["first_frame", "last_frame"]);
+    for (const frame of video.frame_images) {
+      const image = await decodeReference(Buffer.from(frame.image_url.url.split(",")[1], "base64"));
+      assert.equal(image.w, 1024);
+      assert.equal(image.h, 1024);
+      assert.deepEqual([...image.pixels.subarray(0, 4)], [0, 177, 64, 255],
+        "both saved animation poses and aligned references reach the provider with a green backdrop");
+    }
     assert.equal(video.input_references, undefined);
     assert.doesNotMatch(video.prompt, /Create a seamless cycle/);
     assert.match(video.prompt, /exact ending pose/);

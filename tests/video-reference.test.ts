@@ -4,9 +4,10 @@ import test from "node:test";
 import { prepareVideoReference } from "../server/video-reference.ts";
 import { defaultDurationFor, generateSpriteMotionVideo, VIDEO_MODELS, type VideoModelId } from "../server/video.ts";
 import { videoFrameError } from "../src/lib/video-capabilities.ts";
+import { pngFixture } from "./helpers/png.ts";
 
 function ffmpeg(input: Buffer, args: string[]): Buffer {
-  const result = spawnSync("ffmpeg", ["-hide_banner", "-loglevel", "error", ...args], { input });
+  const result = spawnSync("ffmpeg", ["-hide_banner", "-loglevel", "error", ...args], { input, maxBuffer: 16_000_000 });
   assert.equal(result.status, 0, result.stderr?.toString());
   return result.stdout;
 }
@@ -30,6 +31,40 @@ test("video reference composites transparency onto green, preserves black detail
   assert.ok(Math.abs(output[10] - 160) <= 1);
   assert.equal(output[11], 255);
   assert.deepEqual(decode(original), pixels);
+});
+
+test("endpoint canvas normalization preserves alpha until compositing, including transparent black margins", async () => {
+  // Aligned references have transparent black margins and can retain chroma RGB
+  // beneath transparent pixels closer to the character.
+  for (const height of [4, 8]) {
+    const source = Buffer.alloc(8 * height * 4);
+    source.set([0, 177, 64, 0], (1 * 8 + 1) * 4);
+    source.set([0, 0, 0, 255], (2 * 8 + 3) * 4);
+    source.set([255, 255, 255, 128], (2 * 8 + 4) * 4);
+    const original = `data:image/png;base64,${pngFixture(8, height, [...source]).toString("base64")}`;
+    for (const size of [8, 16, 1024]) {
+      const prepared = await prepareVideoReference(original, size);
+      const png = Buffer.from(prepared.split(",")[1], "base64");
+      assert.equal(png.readUInt32BE(16), size);
+      assert.equal(png.readUInt32BE(20), size);
+      const output = decode(prepared);
+      const scale = size / 8;
+      const top = (size - height * scale) / 2;
+      for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+        const sx = Math.floor(x / scale);
+        const sy = Math.floor((y - top) / scale);
+        const i = (y * size + x) * 4;
+        const expected = sy === 2 && sx === 3 ? [0, 0, 0, 255]
+          : sy === 2 && sx === 4 ? [128, 216, 160, 255] : [0, 177, 64, 255];
+        for (let channel = 0; channel < 4; channel++) {
+          if (Math.abs(output[i + channel] - expected[channel]) > 1) {
+            assert.fail(`${8}×${height} → ${size}: pixel (${x}, ${y}) is ${[...output.subarray(i, i + 4)]}, expected ${expected}`);
+          }
+        }
+      }
+    }
+    assert.deepEqual(decode(original), source, "saved poses stay unchanged");
+  }
 });
 
 for (const model of ["x-ai/grok-imagine-video", "minimax/hailuo-3", "minimax/hailuo-3-max", "bytedance/seedance-2.0"] satisfies VideoModelId[]) {

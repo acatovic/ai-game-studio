@@ -20,7 +20,9 @@ export async function prepareVideoReference(image: string, canvasSize?: number):
       "-hide_banner", "-loglevel", "error", "-i", "pipe:0",
       "-filter_complex",
       "[0:v]format=rgba," +
-        (canvasSize ? `scale=${canvasSize}:${canvasSize}:force_original_aspect_ratio=decrease:flags=neighbor,` +
+        // Pin scale's output to RGBA: otherwise FFmpeg can negotiate RGB24 from
+        // the background branch and discard alpha before the green composite.
+        (canvasSize ? `scale=${canvasSize}:${canvasSize}:force_original_aspect_ratio=decrease:flags=neighbor,format=rgba,` +
           `pad=${canvasSize}:${canvasSize}:(ow-iw)/2:(oh-ih)/2:color=0x00b140,` : "") +
         "split[foreground][background];" +
         "[background]format=rgb24,lutrgb=r=0:g=177:b=64[green];" +

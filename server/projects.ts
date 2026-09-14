@@ -230,7 +230,7 @@ export async function readManifest(): Promise<ProjectManifest> {
   const revisionFor = (file: string) => createHash("sha256").update(file).digest("hex").slice(0, 16);
   const imageSources: ImageSourceOption[] = REFERENCE_VIEWS.flatMap(view => {
     const url = referenceViews[view];
-    return url ? [{ source: { kind: "reference" as const, view, revision: revisionFor(url) }, label: `${REFERENCE_LABELS[view]} reference`, url }] : [];
+    return url ? [{ source: { kind: "reference" as const, view, revision: revisionFor(url) }, label: REFERENCE_LABELS[view], url }] : [];
   });
   for (const summary of character.animations) {
     const animation = JSON.parse(await readFile(spriteFile(animationPath(summary.id, "animation.json")), "utf8")) as AnimationManifest;
@@ -320,11 +320,16 @@ export async function stageAnimationImage(current: ProjectManifest, value: unkno
 export function toView(m: ProjectManifest): ProjectView {
   const doc = m.project!;
   const base = `/projects/${encodeURIComponent(doc.name)}/sprites/${encodeURIComponent(doc.activeSpriteId)}/`;
+  const endpointView = (image: SavedAnimationImage | null): ImageSourceOption | null => image ? {
+    source: image.source,
+    label: image.source.kind === "reference" ? REFERENCE_LABELS[image.source.view] : image.label,
+    url: base + image.path,
+  } : null;
   return { project: doc, name: doc.name, activeAnimationId: m.activeAnimationId, animations: m.animations,
     referenceViews: Object.fromEntries(Object.entries(m.referenceViews).map(([view, file]) => [view, base + file])),
     referenceAlignment: m.referenceAlignment,
-    startImage: m.startImage ? { source: m.startImage.source, label: m.startImage.label, url: base + m.startImage.path } : null,
-    endImage: m.endImage ? { source: m.endImage.source, label: m.endImage.label, url: base + m.endImage.path } : null,
+    startImage: endpointView(m.startImage),
+    endImage: endpointView(m.endImage),
     imageSources: m.imageSources.map(option => ({ ...option, url: base + option.url })),
     asepriteUrl: m.aseprite ? base + m.aseprite : null, spritePrompt: m.spritePrompt, spriteModel: m.spriteModel,
     motionPrompt: m.motionPrompt, motionModel: m.motionModel,
