@@ -103,7 +103,7 @@ for (const model of ["x-ai/grok-imagine-video", "minimax/hailuo-3", "minimax/hai
   });
 }
 
-for (const model of ["minimax/hailuo-3", "minimax/hailuo-3-max", "bytedance/seedance-2.0"] satisfies VideoModelId[]) {
+for (const model of ["minimax/hailuo-3", "bytedance/seedance-2.0"] satisfies VideoModelId[]) {
   test(`${model} with only an end image never inserts the character reference as a start frame`, async t => {
     const original = reference();
     const key = process.env.OPENROUTER_API_KEY;
@@ -153,17 +153,20 @@ for (const model of ["minimax/hailuo-3", "bytedance/seedance-2.0"] satisfies Vid
   });
 }
 
-test("H3 Max rejects paired keyframes before preparing images or contacting OpenRouter", async t => {
-  const key = process.env.OPENROUTER_API_KEY;
-  process.env.OPENROUTER_API_KEY = "test-key";
-  t.after(() => {
-    if (key === undefined) delete process.env.OPENROUTER_API_KEY;
-    else process.env.OPENROUTER_API_KEY = key;
+for (const hasStartImage of [false, true]) {
+  test(`H3 Max rejects an end image ${hasStartImage ? "with" : "without"} a start before preparing images or contacting OpenRouter`, async t => {
+    const key = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "test-key";
+    t.after(() => {
+      if (key === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = key;
+    });
+    t.mock.method(globalThis, "fetch", async () => { assert.fail("Unsupported end images must not reach the provider"); });
+    await assert.rejects(generateSpriteMotionVideo("unused", "turn", 5, "minimax/hailuo-3-max",
+      { startImage: hasStartImage ? "invalid-start" : undefined, endImage: "invalid-end" }),
+    /H3 Max supports only a start image through OpenRouter.*MiniMax H3 or Seedance/);
   });
-  t.mock.method(globalThis, "fetch", async () => { assert.fail("Unsupported pairs must not reach the provider"); });
-  await assert.rejects(generateSpriteMotionVideo("unused", "turn", 5, "minimax/hailuo-3-max",
-    { startImage: "invalid-start", endImage: "invalid-end" }), /H3 Max accepts one keyframe.*MiniMax H3 or Seedance/);
-});
+}
 
 test("H3 Max still accepts a start image alone", async t => {
   const key = process.env.OPENROUTER_API_KEY;
@@ -186,8 +189,12 @@ test("shared UI validation distinguishes supported endpoint types from supported
   const max = VIDEO_MODELS.find(model => model.id === "minimax/hailuo-3-max")!;
   assert.equal(videoFrameError(max, false, false), null);
   assert.equal(videoFrameError(max, true, false), null);
-  assert.equal(videoFrameError(max, false, true), null);
-  assert.match(videoFrameError(max, true, true)!, /choose a start or an end image, not both/);
+  assert.match(videoFrameError(max, false, true)!, /supports only a start image through OpenRouter/);
+  assert.match(videoFrameError(max, true, true)!, /supports only a start image through OpenRouter/);
+  // Models may advertise end images while still limiting requests to one frame.
+  const single = { label: "Single-keyframe model", supportsEndImage: true, maxKeyframeImages: 1 };
+  assert.equal(videoFrameError(single, false, true), null);
+  assert.match(videoFrameError(single, true, true)!, /choose a start or an end image, not both/);
   for (const id of ["minimax/hailuo-3", "bytedance/seedance-2.0"]) {
     assert.equal(videoFrameError(VIDEO_MODELS.find(model => model.id === id)!, true, true), null);
   }

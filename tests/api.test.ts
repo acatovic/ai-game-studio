@@ -31,7 +31,7 @@ test('API requires explicit project context and serves assets from project stora
       model.id === 'minimax/hailuo-3-max' && model.label === 'MiniMax H3 Max' && model.defaultDuration === 5));
     const frameLimits = new Map(videoModels.models.map((model: { id: string; supportsEndImage: boolean; maxKeyframeImages: number }) =>
       [model.id, { end: model.supportsEndImage, max: model.maxKeyframeImages }]));
-    assert.deepEqual(frameLimits.get('minimax/hailuo-3-max'), { end: true, max: 1 });
+    assert.deepEqual(frameLimits.get('minimax/hailuo-3-max'), { end: false, max: 1 });
     assert.deepEqual(frameLimits.get('minimax/hailuo-3'), { end: true, max: 2 });
     assert.equal((await post('/api/projects/draft', {})).status, 400);
     let response = await post('/api/projects/new', { name: 'demo' });
