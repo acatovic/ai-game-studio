@@ -1,6 +1,6 @@
-# Wombo - AI Game Studio <img src="wombo-playing.gif" alt="Wombo mascot playing" width="64" height="64">
+# <img src="wombo-playing.gif" alt="Wombo mascot playing" width="96" height="96"> Wombo - The AI Game Studio
 
-Create named characters, animations, and sounds from text prompts. Generate aligned side, front and back references, then create walking, idle and transition animations with automatically saved PNG and Aseprite files. Image and video calls go through OpenRouter; Sound & SFX uses ElevenLabs directly from the server.
+Wombo is created with using Codex and Astra. It allows you to create named characters, animations, and sounds from text prompts. Generate aligned side, front and back references, then create walking, idle and transition animations with automatically saved PNG and Aseprite files. Image and video calls go through OpenRouter; Sound & SFX uses ElevenLabs directly from the server.
 
 ## Character creation
 
@@ -16,7 +16,7 @@ Turn your character into an animation, choose the frames to include, and save sp
 
 ## Example game: After Light
 
-**After Light** is a 2.5D interplanetary-cyberpunk game built using **Unity + Blender + Astra**, with sprite assets created in Wombo.
+**After Light** is a 2.5D interplanetary-cyberpunk game currently being built using **Unity + Blender + Astra**, with 2D graphics and sound assets created in Wombo.
 
 ![After Light gameplay featuring sprite assets from Wombo](afterlight-demo.gif)
 
