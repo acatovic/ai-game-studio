@@ -1,6 +1,6 @@
 # <img src="wombo-playing.gif" alt="Wombo mascot playing" width="96" height="96"> Wombo - The AI Game Studio
 
-Wombo is created with using Codex and Astra. It allows you to create named characters, animations, and sounds from text prompts. Generate aligned side, front and back references, then create walking, idle and transition animations with automatically saved PNG and Aseprite files. Image and video calls go through OpenRouter; Sound & SFX uses ElevenLabs directly from the server.
+Wombo is created with the help of Codex and Astra. It allows you to create named characters, animations, and sounds from text prompts. Generate aligned side, front and back references, then create walking, idle and transition animations with automatically saved PNG and Aseprite files. Image and video calls go through OpenRouter; Sound & SFX uses ElevenLabs directly from the server.
 
 ## Character creation
 
