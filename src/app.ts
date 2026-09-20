@@ -7,6 +7,7 @@ import {
   deleteProject,
   deleteAnimation,
   generateSprite,
+  setReferenceImage,
   setActiveProject,
   getImageModels,
   getVideoModels,
@@ -22,9 +23,11 @@ import { Store, createInitialState, hydrateFromView } from "./lib/state";
 import { composeSpritesheet } from "./lib/spritesheet";
 import { REFERENCE_VIEWS, REFERENCE_LABELS, sourceKey, type ImageSourceOption } from "./lib/character";
 import { videoFrameError } from "./lib/video-capabilities";
+import { REFERENCE_IMAGE_ACCEPT, isReferenceImageFile, readReferenceImage } from "./lib/reference-image";
 import {
   chevronIcon,
   copyIcon,
+  clipboardIcon,
   folderIcon,
   frameIcon,
   gridIcon,
@@ -32,6 +35,8 @@ import {
   saveIcon,
   sparkleIcon,
   trashIcon,
+  paperclipIcon,
+  closeIcon,
 } from "./components/icons";
 
 const EMPTY_PLACEHOLDER_SLOTS = 8;
@@ -61,6 +66,12 @@ export function mountApp(root: HTMLElement) {
 
   // ---- Refs ----
   const promptInput = root.querySelector<HTMLTextAreaElement>("#sprite-prompt")!;
+  const referenceInput = root.querySelector<HTMLInputElement>("#reference-image-input")!;
+  const attachReferenceBtn = root.querySelector<HTMLButtonElement>("#btn-attach-reference")!;
+  const removeReferenceBtn = root.querySelector<HTMLButtonElement>("#btn-remove-reference")!;
+  const attachedReference = root.querySelector<HTMLElement>("#attached-reference")!;
+  const attachedReferenceImage = root.querySelector<HTMLImageElement>("#attached-reference-image")!;
+  const attachedReferenceName = root.querySelector<HTMLElement>("#attached-reference-name")!;
   const spriteModelSelect = root.querySelector<HTMLSelectElement>("#sprite-model")!;
   const generateSpriteBtn = root.querySelector<HTMLButtonElement>("#btn-generate-sprite")!;
   const spritePreview = root.querySelector<HTMLDivElement>("#sprite-preview")!;
@@ -99,6 +110,18 @@ export function mountApp(root: HTMLElement) {
   }
 
   const motionInput = root.querySelector<HTMLTextAreaElement>("#motion-prompt")!;
+  const copyCharacterPromptBtn = root.querySelector<HTMLButtonElement>("#btn-copy-character-prompt")!;
+  const copyMotionPromptBtn = root.querySelector<HTMLButtonElement>("#btn-copy-motion-prompt")!;
+  for (const [button, input] of [[copyCharacterPromptBtn, promptInput], [copyMotionPromptBtn, motionInput]] as const) {
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(input.value);
+        toast("Prompt copied");
+      } catch {
+        toast("Could not copy prompt to clipboard.");
+      }
+    });
+  }
   const motionModelSelect = root.querySelector<HTMLSelectElement>("#motion-model")!;
   const generateFramesBtn = root.querySelector<HTMLButtonElement>("#btn-generate-frames")!;
   const framesGrid = root.querySelector<HTMLDivElement>("#frames-grid")!;
@@ -146,6 +169,39 @@ export function mountApp(root: HTMLElement) {
   // ---- Event handlers ----
   promptInput.addEventListener("input", () => {
     store.set({ spritePrompt: promptInput.value });
+  });
+
+  async function attachReference(file: File | null) {
+    if (attachReferenceBtn.disabled) return;
+    store.set({ referenceImageLoading: true });
+    try {
+      const image = file ? await readReferenceImage(file) : null;
+      if (file && !image) return;
+      await persistDraft();
+      const result = await setReferenceImage(image);
+      store.set({ referenceImage: result.referenceImage });
+    } catch (err) {
+      setStatus(spriteStatus, err instanceof Error ? err.message : "Could not attach reference image.", "error");
+    } finally {
+      referenceInput.value = "";
+      store.set({ referenceImageLoading: false });
+    }
+  }
+  attachReferenceBtn.addEventListener("click", () => referenceInput.click());
+  removeReferenceBtn.addEventListener("click", () => { void attachReference(null); });
+  referenceInput.addEventListener("change", () => {
+    const file = referenceInput.files?.[0];
+    if (file) void attachReference(file);
+  });
+  root.querySelector<HTMLElement>("#character-prompt-field")!.addEventListener("paste", event => {
+    const clipboard = event.clipboardData;
+    if (!clipboard) return;
+    const files = Array.from(clipboard.files);
+    // Suppress file pastes even when unsupported; ordinary prompt text still pastes normally.
+    if (!files.length && !Array.from(clipboard.items).some(item => item.kind === "file")) return;
+    event.preventDefault();
+    const file = files.find(isReferenceImageFile);
+    if (file) void attachReference(file);
   });
 
   spriteModelSelect.addEventListener("change", () => {
@@ -467,7 +523,7 @@ export function mountApp(root: HTMLElement) {
   // ---- Render reactivity ----
   store.subscribe((state) => {
     const busy =
-      state.navigating || state.previewGifBuilding ||
+      state.navigating || state.previewGifBuilding || state.referenceImageLoading ||
       state.status === "generating-image" ||
       state.status === "generating-video" ||
       state.status === "extracting-frames";
@@ -502,6 +558,22 @@ export function mountApp(root: HTMLElement) {
     animationPicker.innerHTML = state.animations.map(a => `<option value="${escapeAttr(a.id)}">${escapeHtml(a.name)}</option>`).join("");
     animationPicker.value = state.activeAnimationId;
     promptInput.disabled = busy || !hasCharacter;
+    copyCharacterPromptBtn.disabled = !hasCharacter || !state.spritePrompt.trim();
+    copyMotionPromptBtn.disabled = !hasAnimation || !state.motionPrompt.trim();
+    attachReferenceBtn.disabled = referenceInput.disabled = removeReferenceBtn.disabled = busy || !hasCharacter;
+    attachReferenceBtn.innerHTML = state.referenceImageLoading ? spinner() : paperclipIcon;
+    attachReferenceBtn.setAttribute("aria-busy", String(state.referenceImageLoading));
+    attachReferenceBtn.setAttribute("aria-label", state.referenceImage ? "Replace reference image" : "Attach reference image");
+    attachedReference.hidden = !state.referenceImage;
+    if (state.referenceImage) {
+      if (attachedReferenceImage.getAttribute("src") !== state.referenceImage.url) attachedReferenceImage.src = state.referenceImage.url;
+      attachedReferenceImage.alt = state.referenceImage.name;
+      attachedReferenceName.textContent = state.referenceImage.name;
+      attachedReference.title = state.referenceImage.name;
+    } else {
+      attachedReferenceImage.removeAttribute("src");
+      attachedReferenceName.textContent = "";
+    }
     motionInput.disabled = busy || !hasAnimation;
     motionModelSelect.disabled = busy || !hasAnimation;
     loadMenu.inert = busy;
@@ -543,8 +615,7 @@ export function mountApp(root: HTMLElement) {
     for (const key of ["startImage", "endImage"] as const) {
       const select = endpointSelects[key];
       const selected = state[key];
-      select.innerHTML = renderImageSourceOptions(state.imageSources, selected,
-        key === "startImage" ? "None" : "None · seamless loop");
+      select.innerHTML = renderImageSourceOptions(state.imageSources, selected, "None");
       select.value = sourceKey(selected?.source ?? null);
       select.disabled = busy || !hasAnimation;
       const preview = root.querySelector<HTMLElement>(`#${key === "startImage" ? "start" : "end"}-image-preview`)!;
@@ -782,7 +853,7 @@ function renderShell(): string {
 
           <section class="card">
             <h2 class="card__title">1. Create Character</h2>
-            <div class="field">
+            <div id="character-prompt-field" class="field">
               <label class="field__label" for="sprite-prompt">Character Prompt</label>
               <textarea
                 id="sprite-prompt"
@@ -790,6 +861,18 @@ function renderShell(): string {
                 placeholder="Describe the character or object…"
                 rows="3"
               ></textarea>
+              <div class="reference-attachment">
+                <input id="reference-image-input" type="file" accept="${REFERENCE_IMAGE_ACCEPT}" hidden />
+                <button id="btn-attach-reference" class="reference-attachment__button" type="button" aria-label="Attach reference image">
+                  ${paperclipIcon}
+                </button>
+                <button id="btn-copy-character-prompt" class="prompt-copy" type="button" title="Copy character prompt" aria-label="Copy character prompt">${clipboardIcon}</button>
+                <div id="attached-reference" class="reference-attachment__preview" hidden>
+                  <img id="attached-reference-image" alt="" />
+                  <span id="attached-reference-name"></span>
+                  <button id="btn-remove-reference" class="reference-attachment__button" type="button" aria-label="Remove reference image">${closeIcon}</button>
+                </div>
+              </div>
             </div>
             <div class="field">
               <label class="field__label" for="sprite-model">Model</label>
@@ -834,6 +917,9 @@ function renderShell(): string {
                 placeholder="e.g., walking left, jump, attack right…"
                 rows="3"
               ></textarea>
+              <div class="prompt-actions">
+                <button id="btn-copy-motion-prompt" class="prompt-copy" type="button" title="Copy animation prompt" aria-label="Copy animation prompt">${clipboardIcon}</button>
+              </div>
             </div>
             <div class="endpoint-images" role="group" aria-label="Animation start and end images">
               <div class="field">

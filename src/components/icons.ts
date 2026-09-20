@@ -26,6 +26,18 @@ export const plusIcon = `
 </svg>
 `;
 
+export const paperclipIcon = `
+<svg class="btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path d="m7 10 5-5a2.1 2.1 0 0 1 3 3l-6.5 6.5a3.5 3.5 0 0 1-5-5L10 3a4.9 4.9 0 0 1 7 7l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+`;
+
+export const closeIcon = `
+<svg class="btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path d="m5 5 10 10M15 5 5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+</svg>
+`;
+
 export const saveIcon = `
 <svg class="btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <path d="M4 4h9l3 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
@@ -49,6 +61,13 @@ export const copyIcon = `
 <svg class="btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <rect x="7" y="7" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
   <path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+</svg>
+`;
+
+export const clipboardIcon = `
+<svg class="btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path d="M7 4H5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+  <rect x="7" y="2.5" width="6" height="4" rx="1" stroke="currentColor" stroke-width="1.5"/>
 </svg>
 `;
 

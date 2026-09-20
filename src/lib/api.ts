@@ -1,7 +1,9 @@
 import type { ReferenceView, ImageSource, ImageSourceOption } from "./character";
 import type { VideoFrameCapabilities } from "./video-capabilities";
+import type { ReferenceImageAttachment } from "./reference-image";
 
 export interface ProjectView {
+  referenceImage: ReferenceImageAttachment | null;
   referenceViews: Partial<Record<ReferenceView, string>>;
   referenceAlignment: { canvasSize: number; height: number; top: number; centerX: number } | null;
   startImage: ImageSourceOption | null;
@@ -100,6 +102,10 @@ export function generateSprite(
   model?: string,
 ): Promise<GenerateSpriteResponse> {
   return postJson("/api/sprites/generate", { prompt, model });
+}
+
+export function setReferenceImage(image: { name: string; dataUrl: string } | null): Promise<{ referenceImage: ReferenceImageAttachment | null }> {
+  return postJson("/api/sprites/reference-image", { image });
 }
 
 export function animateSprite(

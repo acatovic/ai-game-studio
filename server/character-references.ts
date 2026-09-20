@@ -118,17 +118,23 @@ const DIRECTIVE =
   "Keep the full character and every accessory inside the image with a generous empty margin. " +
   "Use a perfectly flat solid chroma green #00b140 backdrop, with no green on the character. ";
 
-export async function generateCharacterReferences(prompt: string, model: ImageModelId) {
-  const side = await generateSpriteImage(`${prompt}\n\n${DIRECTIVE}${VIEW_PROMPTS.side}`, model);
+export async function generateCharacterReferences(prompt: string, model: ImageModelId, referenceImage?: string) {
+  const appearance = referenceImage
+    ? "Use the uploaded reference image for the character's appearance and identity, applying the text prompt's requested details and changes. "
+    : "";
+  const side = await generateSpriteImage(`${prompt}\n\n${appearance}${DIRECTIVE}${VIEW_PROMPTS.side}`, model,
+    referenceImage ? [referenceImage] : []);
   const reference = `data:image/png;base64,${side}`;
   // Sequential calls keep provider concurrency modest and avoid orphan requests on failure.
   const sources = { side: Buffer.from(side, "base64") } as Record<ReferenceView, Buffer>;
   for (const view of ["front", "back"] as const) {
     const base64 = await generateSpriteImage(
-      `${prompt}\n\n${DIRECTIVE}${VIEW_PROMPTS[view]} ` +
-      "Rotate the supplied character to this view. Preserve the exact identity, anatomy, costume, " +
+      `${prompt}\n\n${appearance}${DIRECTIVE}${VIEW_PROMPTS[view]} ` +
+      "Rotate the character from the first supplied image (the generated side view) to this view. " +
+      (referenceImage ? "The second image is the uploaded appearance reference; keep its defining details while following the text prompt. " : "") +
+      "Preserve the exact identity, anatomy, costume, " +
       "accessories, colors, proportions, pixel-art style and neutral pose. Do not redesign the character.",
-      model, reference);
+      model, referenceImage ? [reference, referenceImage] : [reference]);
     sources[view] = Buffer.from(base64, "base64");
   }
   const normalized = await alignReferenceViews(sources);

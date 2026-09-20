@@ -115,7 +115,7 @@ export async function normalizeImageToPng(
 export async function generateSpriteImage(
   prompt: string,
   model: ImageModelId = DEFAULT_IMAGE_MODEL,
-  reference?: string,
+  references: readonly string[] = [],
 ): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
@@ -132,7 +132,7 @@ export async function generateSpriteImage(
     body: JSON.stringify({
       model,
       prompt: fullPrompt,
-      ...(reference ? { input_references: [{ type: "image_url", image_url: { url: reference } }] } : {}),
+      ...(references.length ? { input_references: references.map(url => ({ type: "image_url", image_url: { url } })) } : {}),
       ...(isFlare ? { quality: "medium", background: "auto", output_format: "png" } : {}),
     }),
   });

@@ -4,6 +4,8 @@ import { stageAnimationAssets } from "./animation-assets.js";
 import { deleteAssetFolder } from "./asset-storage.js";
 import { readPngDims } from "./files.js";
 import { DEFAULT_IMAGE_MODEL } from "./image.js";
+import type { SavedReferenceImage } from "./reference-image.js";
+import type { ReferenceImageAttachment } from "../src/lib/reference-image.js";
 import { createHash, randomUUID } from "node:crypto";
 import { REFERENCE_VIEWS, REFERENCE_LABELS, sourceKey, type ReferenceView, type ImageSource,
   type ImageSourceOption } from "../src/lib/character.js";
@@ -40,6 +42,7 @@ interface AnimationManifest extends AnimationSummary {
   updatedAt: string;
 }
 interface CharacterManifest {
+  referenceImage?: SavedReferenceImage | null;
   version: 2;
   name: string;
   spritePrompt: string;
@@ -54,6 +57,7 @@ interface CharacterManifest {
 }
 
 export interface ProjectManifest {
+  referenceImage: SavedReferenceImage | null;
   referenceViews: Partial<Record<ReferenceView, string>>;
   referenceAlignment: ReferenceAlignment | null;
   startImage: SavedAnimationImage | null;
@@ -79,6 +83,7 @@ export interface ProjectManifest {
 }
 
 export interface ProjectView {
+  referenceImage: ReferenceImageAttachment | null;
   referenceViews: Partial<Record<ReferenceView, string>>;
   referenceAlignment: ReferenceAlignment | null;
   startImage: ImageSourceOption | null;
@@ -105,6 +110,7 @@ export interface ProjectView {
 
 export function emptyManifest(name: string): ProjectManifest {
   return {
+    referenceImage: null,
     referenceViews: {}, referenceAlignment: null, startImage: null, endImage: null, imageSources: [],
     name,
     activeAnimationId: "",
@@ -281,6 +287,11 @@ export async function commitCharacterReferences(patch: Pick<ProjectManifest,
   await writeJson(spriteFile(PROJECT_FILES.manifest), { ...character, ...patch, updatedAt: new Date().toISOString() });
 }
 
+export async function commitReferenceImage(referenceImage: SavedReferenceImage | null): Promise<void> {
+  const character = await characterManifest();
+  await writeJson(spriteFile(PROJECT_FILES.manifest), { ...character, referenceImage, updatedAt: new Date().toISOString() });
+}
+
 /** Validate a picker value, then copy the exact pose into the target animation.
  * Saved endpoints survive source regeneration, selection changes, renames and deletion. */
 export function validateImageSource(value: unknown): ImageSource | null {
@@ -326,6 +337,7 @@ export function toView(m: ProjectManifest): ProjectView {
     url: base + image.path,
   } : null;
   return { project: doc, name: doc.name, activeAnimationId: m.activeAnimationId, animations: m.animations,
+    referenceImage: m.referenceImage ? { name: m.referenceImage.name, url: base + m.referenceImage.path } : null,
     referenceViews: Object.fromEntries(Object.entries(m.referenceViews).map(([view, file]) => [view, base + file])),
     referenceAlignment: m.referenceAlignment,
     startImage: endpointView(m.startImage),
