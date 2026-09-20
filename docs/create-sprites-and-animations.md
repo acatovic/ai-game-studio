@@ -73,10 +73,14 @@ Click frame tiles to include or exclude them, then click **Update Spritesheet** 
 
 - **Rename** updates the character or animation folder and affected asset paths.
 - **Duplicate** creates an independent animation with its prompts, model, saved poses, frame selection, source clips, and outputs.
-- The **bin button** deletes the selected animation and its generated files after confirmation.
+- Character, animation, and sound actions appear in the order **Add**, **Rename**, **Delete**. Animation **Duplicate** follows these actions.
+- The character **bin button** deletes the selected character, its references, and all of its animations and files.
+- The animation **bin button** deletes the selected animation and its generated files. Both deletion dialogs name the item and offer **Yes** / **No**; **No** or Escape cancels.
 - **Save project**, navigation between assets or workspaces, and **Close project** save draft prompts and selections. Closing returns to the start screen.
 
 Each character can have multiple animations. Editing prompts or poses changes the next generation; it does not regenerate existing frames.
+
+The **Background** bubble below **Spritesheet Preview** expands into swatches for transparency, mid-tone gray, deep blue-gray, chroma key green, magenta, and off-white. A colour changes the backdrop behind both the spritesheet and animated preview; saved PNG and Aseprite files retain their transparency.
 
 ## Find the generated files
 

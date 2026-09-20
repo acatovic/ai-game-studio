@@ -40,7 +40,7 @@ The original MP3 and a **48 kHz stereo, 16-bit PCM WAV** save automatically afte
 
 - **Save project**, switching sounds or workspaces, and **Close project** persist draft settings.
 - **Rename** moves the sound's folder and renames the current WAV.
-- The **bin button** deletes the selected sound and its audio files after confirmation.
+- The **bin button** asks “Are you sure you want to delete \<sound name\>?” Choose **Yes** to delete the sound and all its audio files, or **No** to keep it. Escape also cancels.
 - Regeneration creates a separate revision. A failed generation or audio conversion preserves the previous saved recording.
 
 Prompt, length, and loop edits apply when you next click **Generate Sound**. Until then, playback uses the existing recording.

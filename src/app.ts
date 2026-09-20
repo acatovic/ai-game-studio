@@ -5,6 +5,7 @@ import {
   animateSprite,
   checkHealth,
   deleteProject,
+  deleteSprite,
   deleteAnimation,
   generateSprite,
   setReferenceImage,
@@ -19,6 +20,8 @@ import {
   saveSpritesheet,
 } from "./lib/api";
 import { mountMusic } from "./components/music";
+import { confirmDelete } from "./components/confirm-delete";
+import { mountPreviewBackground } from "./components/preview-background";
 import { Store, createInitialState, hydrateFromView } from "./lib/state";
 import { composeSpritesheet } from "./lib/spritesheet";
 import { REFERENCE_VIEWS, REFERENCE_LABELS, sourceKey, type ImageSourceOption } from "./lib/character";
@@ -131,6 +134,7 @@ export function mountApp(root: HTMLElement) {
   const sheetPreview = root.querySelector<HTMLDivElement>("#sheet-preview")!;
   const sheetMeta = root.querySelector<HTMLDivElement>("#sheet-meta")!;
   const gifPreview = root.querySelector<HTMLDivElement>("#gif-preview")!;
+  mountPreviewBackground(root.querySelector<HTMLElement>("#preview-background")!, [sheetPreview, gifPreview]);
 
   const projectLabel = root.querySelector<HTMLSpanElement>("#project-label")!;
   const newBtn = root.querySelector<HTMLButtonElement>("#btn-new-project")!;
@@ -406,6 +410,7 @@ export function mountApp(root: HTMLElement) {
   const spritePicker = root.querySelector<HTMLSelectElement>("#sprite-picker")!;
   const addSpriteBtn = root.querySelector<HTMLButtonElement>("#btn-add-sprite")!;
   const renameSpriteBtn = root.querySelector<HTMLButtonElement>("#btn-rename-sprite")!;
+  const deleteSpriteBtn = root.querySelector<HTMLButtonElement>("#btn-delete-sprite")!;
   async function navigateSprite(action: "new" | "load" | "rename", value: string) {
     store.set({ navigating: true });
     try {
@@ -423,6 +428,20 @@ export function mountApp(root: HTMLElement) {
     const project = store.get().project;
     const name = await askName("Rename character", project?.sprites.find(s => s.id === project.activeSpriteId)?.name);
     if (name?.trim()) void navigateSprite("rename", name.trim());
+  });
+  deleteSpriteBtn.addEventListener("click", async () => {
+    if (deleteSpriteBtn.disabled) return;
+    const project = store.get().project;
+    const character = project?.sprites.find(sprite => sprite.id === project.activeSpriteId);
+    if (!character) return;
+    store.set({ navigating: true });
+    try {
+      if (!await confirmDelete("character", character.name)) return;
+      await persistDraft();
+      await applyView(await deleteSprite());
+      toast(`Deleted character '${character.name}'`);
+    } catch (err) { toast(err instanceof Error ? err.message : "Could not delete character"); }
+    finally { store.set({ navigating: false }); }
   });
   const animationPicker = root.querySelector<HTMLSelectElement>("#animation-picker")!;
   const addAnimationBtn = root.querySelector<HTMLButtonElement>("#btn-add-animation")!;
@@ -463,11 +482,13 @@ export function mountApp(root: HTMLElement) {
     if (name?.trim()) void navigateAnimation("duplicate", name.trim());
   });
   deleteAnimationBtn.addEventListener("click", async () => {
+    if (deleteAnimationBtn.disabled) return;
     const state = store.get();
     const animation = state.animations.find(a => a.id === state.activeAnimationId);
-    if (!animation || !window.confirm(`Delete animation '${animation.name}' and all its generated files? This can't be undone.`)) return;
+    if (!animation) return;
     store.set({ navigating: true });
     try {
+      if (!await confirmDelete("animation", animation.name)) return;
       await persistDraft();
       await applyView(await deleteAnimation());
       toast(`Deleted animation '${animation.name}'`);
@@ -543,6 +564,8 @@ export function mountApp(root: HTMLElement) {
     spritePicker.hidden = !hasCharacter;
     root.querySelector<HTMLElement>('label[for="sprite-picker"]')!.hidden = !hasCharacter;
     renameSpriteBtn.hidden = !hasCharacter;
+    deleteSpriteBtn.hidden = !hasCharacter;
+    deleteSpriteBtn.disabled = busy || !hasCharacter;
     root.querySelector<HTMLElement>(".sprite-toolbar > span")!.hidden = !hasCharacter;
     animationPicker.hidden = !hasAnimation;
     renameAnimationBtn.hidden = !hasAnimation;
@@ -845,8 +868,9 @@ function renderShell(): string {
         <nav class="sprite-toolbar" aria-label="Project characters">
           <label for="sprite-picker">Characters</label>
           <select id="sprite-picker" class="select"></select>
-          <button id="btn-rename-sprite" class="btn btn--secondary btn--sm" type="button">Rename</button>
           <button id="btn-add-sprite" class="btn btn--secondary btn--sm" type="button">${plusIcon} Add character</button>
+          <button id="btn-rename-sprite" class="btn btn--secondary btn--sm" type="button">Rename</button>
+          <button id="btn-delete-sprite" class="btn btn--secondary btn--sm" type="button" title="Delete character" aria-label="Delete character">${trashIcon}</button>
           <span>Three reference views, connected animations</span>
         </nav>
         <div class="columns">
@@ -902,10 +926,10 @@ function renderShell(): string {
               <label class="field__label" for="animation-picker">Animation</label>
               <select id="animation-picker" class="select"></select>
               <div class="animation-actions">
-                <button id="btn-rename-animation" class="btn btn--secondary btn--sm" type="button">Rename</button>
-                <button id="btn-duplicate-animation" class="btn btn--secondary btn--sm" type="button" title="Duplicate animation" aria-label="Duplicate animation">${copyIcon}</button>
-                <button id="btn-delete-animation" class="btn btn--secondary btn--sm" type="button" title="Delete animation" aria-label="Delete animation">${trashIcon}</button>
                 <button id="btn-add-animation" class="btn btn--secondary btn--sm" type="button">${plusIcon} Add animation</button>
+                <button id="btn-rename-animation" class="btn btn--secondary btn--sm" type="button">Rename</button>
+                <button id="btn-delete-animation" class="btn btn--secondary btn--sm" type="button" title="Delete animation" aria-label="Delete animation">${trashIcon}</button>
+                <button id="btn-duplicate-animation" class="btn btn--secondary btn--sm" type="button" title="Duplicate animation" aria-label="Duplicate animation">${copyIcon}</button>
               </div>
             </div>
             <div id="animation-fields">
@@ -958,6 +982,7 @@ function renderShell(): string {
 
           <section class="card">
             <h2 class="card__title">3. Spritesheet Preview</h2>
+            <div id="preview-background" class="preview-background"></div>
             <div id="sheet-preview" class="sheet-preview">
               <span class="sheet-preview__placeholder">Generate a spritesheet to preview here</span>
             </div>
