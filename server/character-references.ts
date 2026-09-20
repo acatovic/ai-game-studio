@@ -117,24 +117,34 @@ const DIRECTIVE =
   "Orthographic game reference, no perspective, no text, no labels, no shadows, no floor. " +
   "Keep the full character and every accessory inside the image with a generous empty margin. " +
   "Use a perfectly flat solid chroma green #00b140 backdrop, with no green on the character. ";
+const UPLOADED_REFERENCE_DIRECTIVE =
+  "Create the character described in the text prompt. The text prompt takes priority over conflicting image content " +
+  "for the subject, species, anatomy, clothing, colors and art style. " +
+  "Use the uploaded image only for the aspects requested in the text. " +
+  "For a style or aesthetic reference, borrow the rendering technique, linework, texture and mood; " +
+  "do not copy unrequested subjects or their identity. " +
+  "Use a depicted character's identity only when the text requests that character, and apply all requested changes. " +
+  "If the image contains multiple subjects, follow the text to select the intended subject; " +
+  "do not default to the largest or most prominent figure. ";
 
 export async function generateCharacterReferences(prompt: string, model: ImageModelId, referenceImage?: string) {
-  const appearance = referenceImage
-    ? "Use the uploaded reference image for the character's appearance and identity, applying the text prompt's requested details and changes. "
-    : "";
-  const side = await generateSpriteImage(`${prompt}\n\n${appearance}${DIRECTIVE}${VIEW_PROMPTS.side}`, model,
+  const description = `Character description:\n${prompt.trim()}\n\n`;
+  const referenceGuidance = referenceImage ? UPLOADED_REFERENCE_DIRECTIVE : "";
+  const side = await generateSpriteImage(`${description}${referenceGuidance}${DIRECTIVE}${VIEW_PROMPTS.side}`, model,
     referenceImage ? [referenceImage] : []);
   const reference = `data:image/png;base64,${side}`;
   // Sequential calls keep provider concurrency modest and avoid orphan requests on failure.
   const sources = { side: Buffer.from(side, "base64") } as Record<ReferenceView, Buffer>;
   for (const view of ["front", "back"] as const) {
+    // The upload may depict a different subject. Once created, the side view
+    // supplies both the requested identity and style for the remaining angles.
     const base64 = await generateSpriteImage(
-      `${prompt}\n\n${appearance}${DIRECTIVE}${VIEW_PROMPTS[view]} ` +
-      "Rotate the character from the first supplied image (the generated side view) to this view. " +
-      (referenceImage ? "The second image is the uploaded appearance reference; keep its defining details while following the text prompt. " : "") +
+      `${description}${DIRECTIVE}${VIEW_PROMPTS[view]} ` +
+      "The supplied image is the generated side view of the requested character. " +
+      "Use it as the sole visual reference for identity and style. Rotate that character to this view. " +
       "Preserve the exact identity, anatomy, costume, " +
-      "accessories, colors, proportions, pixel-art style and neutral pose. Do not redesign the character.",
-      model, referenceImage ? [reference, referenceImage] : [reference]);
+      "accessories, colors, proportions, art style, linework, texture and neutral pose. Do not redesign the character.",
+      model, [reference]);
     sources[view] = Buffer.from(base64, "base64");
   }
   const normalized = await alignReferenceViews(sources);

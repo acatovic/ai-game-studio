@@ -39,6 +39,7 @@ import {
 } from "./files.js";
 import {
   deleteSavedProject,
+  deleteSprite,
   deleteAnimation,
   createProject,
   changeSprite,
@@ -218,6 +219,11 @@ app.post("/api/projects/load", async (req, res) => {
 
 app.post("/api/projects/new", async (req, res) => {
   try { res.json(await createProject(asString(req.body?.name, "name", 40))); }
+  catch (err) { handleError(err, res); }
+});
+
+app.post("/api/projects/sprites/delete", async (_req, res) => {
+  try { res.json(await deleteSprite()); }
   catch (err) { handleError(err, res); }
 });
 

@@ -1,4 +1,5 @@
-import { trashIcon } from "./icons";
+import { plusIcon, trashIcon } from "./icons";
+import { confirmDelete } from "./confirm-delete";
 
 interface MusicSettings { prompt: string; model: string; duration: number | null; loop: boolean }
 interface MusicTrack extends MusicSettings {
@@ -19,7 +20,7 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
     <nav class="sprite-toolbar" aria-label="Project sounds">
       <label for="music-picker">Sounds & SFX</label>
       <select id="music-picker" class="select" aria-label="Sound"></select>
-      <button id="music-add" class="btn btn--secondary btn--sm" type="button">+ Add sound</button>
+      <button id="music-add" class="btn btn--secondary btn--sm" type="button">${plusIcon} Add sound</button>
       <button id="music-rename" class="btn btn--secondary btn--sm" type="button">Rename</button>
       <button id="music-delete" class="btn btn--secondary btn--sm" type="button" title="Delete sound" aria-label="Delete sound">${trashIcon}</button>
       <span>Soundtracks and short effects, saved alongside your characters</span>
@@ -253,7 +254,7 @@ export function mountMusic(root: HTMLElement, setWorking: (busy: boolean) => voi
   }
   remove.addEventListener("click", () => void run(async () => {
     const track = view.track;
-    if (!track || !window.confirm(`Delete sound '${track.name}' and all its audio files? This can't be undone.`)) return;
+    if (!track || !await confirmDelete("sound", track.name)) return;
     stopPlayback();
     apply(await request("/api/music/delete", {}));
   }));

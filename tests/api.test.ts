@@ -184,6 +184,70 @@ test('API requires explicit project context and serves assets from project stora
     assert.equal((await post('/api/projects/animations/new', { value: 'idle' })).status, 200);
     assert.deepEqual(await readdir(root), ['demo']);
     assert.equal((await post('/api/projects/new', { name: '../escape' })).status, 400);
+
+    // Character deletion removes all revisions and nested assets while preserving other project assets.
+    response = await post('/api/music/new', { value: 'rain' });
+    assert.equal(response.status, 200);
+    const soundFile = path.join(root, 'demo/music/rain/music.json');
+    const soundBefore = await readFile(soundFile, 'utf8');
+    const researcherDir = path.join(root, 'demo/sprites/researcher');
+    await mkdir(path.join(researcherDir, 'references/old-revision'), { recursive: true });
+    await writeFile(path.join(researcherDir, 'references/old-revision/side-original.png'), framePng);
+    await mkdir(path.join(researcherDir, 'inputs/upload'), { recursive: true });
+    await writeFile(path.join(researcherDir, 'inputs/upload/reference.png'), framePng);
+    await writeFile(path.join(researcherDir, 'animations/idle/source.mp4'), 'source video');
+    assert.equal((await post('/api/projects/sprites/new', { value: 'Sidekick' })).status, 200);
+    headers['X-Sprite-Id'] = 'Sidekick';
+    response = await post('/api/projects/animations/new', { value: 'wave' });
+    assert.equal(response.status, 200);
+    const sidekickFile = path.join(root, 'demo/sprites/Sidekick/sprite.json');
+    const sidekickBefore = await readFile(sidekickFile, 'utf8');
+    const projectFile = path.join(root, 'demo/.project');
+    const projectBefore = await readFile(projectFile, 'utf8');
+    delete headers['X-Sprite-Id'];
+    assert.equal((await post('/api/projects/sprites/delete', {})).status, 400);
+    for (const id of ['missing', '../Sidekick']) {
+      headers['X-Sprite-Id'] = id;
+      assert.equal((await post('/api/projects/sprites/delete', {})).status, 400);
+    }
+    assert.equal(await readFile(projectFile, 'utf8'), projectBefore);
+    // An older tab deletes its own character, even after another tab selects Sidekick.
+    headers['X-Sprite-Id'] = 'researcher';
+    headers['X-Animation-Id'] = 'idle';
+    response = await post('/api/projects/sprites/delete', {});
+    assert.equal(response.status, 200);
+    const afterCharacterDelete = await response.json();
+    assert.equal(afterCharacterDelete.project.activeSpriteId, 'Sidekick');
+    assert.equal(afterCharacterDelete.activeAnimationId, 'wave', 'discard the deleted character’s animation context');
+    assert.deepEqual(afterCharacterDelete.project.sprites.map((sprite: { id: string }) => sprite.id), ['Enemy', 'Sidekick']);
+    assert.equal((await fetch(base + empty.spriteUrl)).status, 404);
+    assert.deepEqual((await readdir(path.join(root, 'demo/sprites'))).sort(), ['Enemy', 'Sidekick'],
+      'the entire character directory and staged deletion folder are removed');
+    assert.equal(await readFile(sidekickFile, 'utf8'), sidekickBefore);
+    assert.equal(await readFile(soundFile, 'utf8'), soundBefore);
+    assert.equal((await post('/api/projects/sprites/delete', {})).status, 400, 'stale deletion cannot remove the next character');
+    assert.equal((await post('/api/projects/draft', longDraft)).status, 400, 'stale saves cannot recreate the deleted character');
+    headers['X-Sprite-Id'] = 'Sidekick';
+    response = await post('/api/projects/sprites/delete', {});
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).project.activeSpriteId, 'Enemy');
+    headers['X-Sprite-Id'] = 'Enemy';
+    response = await post('/api/projects/sprites/delete', {});
+    assert.equal(response.status, 200);
+    const noCharacters = await response.json();
+    assert.deepEqual(noCharacters.project.sprites, []);
+    assert.equal(noCharacters.project.activeSpriteId, '');
+    assert.equal(noCharacters.activeAnimationId, '');
+    assert.deepEqual(noCharacters.animations, []);
+    assert.deepEqual(noCharacters.frames, []);
+    assert.equal(noCharacters.spriteUrl, null);
+    assert.deepEqual(await readdir(path.join(root, 'demo/sprites')), []);
+    assert.equal(await readFile(soundFile, 'utf8'), soundBefore);
+    assert.deepEqual((await (await post('/api/projects/load', { name: 'demo' })).json()).project.sprites, []);
+    delete headers['X-Sprite-Id'];
+    delete headers['X-Animation-Id'];
+    assert.equal((await post('/api/projects/sprites/new', { value: 'researcher' })).status, 200,
+      'a deleted character name can be reused');
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       const exited = once(child, "exit");

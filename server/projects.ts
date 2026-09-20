@@ -595,6 +595,23 @@ export async function changeSprite(action: "new" | "load" | "rename", value: str
   return openProject(doc.name);
 }
 
+export async function deleteSprite(): Promise<ProjectView> {
+  const id = projectContext.getStore()?.spriteId;
+  if (!id) throw new Error("Select a character to delete (X-Sprite-Id is required)");
+  safeAssetId(id);
+  const doc = await readProjectDocument(currentProjectName());
+  const index = doc.sprites.findIndex(sprite => sprite.id === id);
+  if (index < 0) throw new Error("Character not found");
+  doc.sprites.splice(index, 1);
+  if (doc.activeSpriteId === id) {
+    doc.activeSpriteId = doc.sprites[Math.min(index, doc.sprites.length - 1)]?.id ?? "";
+  }
+  await deleteAssetFolder(spriteFile(), () => writeProjectDocument(doc));
+  // The next character owns a different animation selection; discard the old tab's animation header.
+  return projectContext.run({ name: doc.name, spriteId: doc.activeSpriteId },
+    async () => toView(await readManifest()));
+}
+
 export async function createProject(name: string): Promise<ProjectView> {
   safeProjectName(name);
   await mkdir(PROJECTS_DIR, { recursive: true });

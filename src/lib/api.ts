@@ -161,6 +161,9 @@ export async function checkHealth(): Promise<{ ok: boolean; hasApiKey: boolean }
 export function changeSprite(action: "new" | "load" | "rename", value: string): Promise<ProjectView> {
   return postJson(`/api/projects/sprites/${action}`, { value });
 }
+export function deleteSprite(): Promise<ProjectView> {
+  return postJson("/api/projects/sprites/delete", {});
+}
 export function saveDraft(draft: { spritePrompt: string; motionPrompt: string; spriteModel: string; motionModel: string;
   startImage?: ImageSource | null; endImage?: ImageSource | null }): Promise<ProjectView> {
   return postJson("/api/projects/draft", draft);

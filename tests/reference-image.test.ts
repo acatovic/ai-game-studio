@@ -24,7 +24,7 @@ test("upload and clipboard filtering allow only JPEG, PNG and WebP", () => {
   assert.ok(!REFERENCE_IMAGE_ACCEPT.includes("image/*"));
 });
 
-test("reference attachments validate bytes, persist per character, and guide all three views", async () => {
+test("reference attachments persist per character and guide creation without overriding the requested subject", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "studio-upload-"));
   const requestsFile = path.join(root, "requests.jsonl");
   const child = spawn(process.execPath, ["--import", "tsx", "--import", "./tests/helpers/character-provider.ts", "server/index.ts"], {
@@ -88,7 +88,8 @@ test("reference attachments validate bytes, persist per character, and guide all
     const savedWebp = await ok("/api/sprites/reference-image", { image: toImage("reference.webp", "image/webp", webp) });
     assert.deepEqual(Buffer.from(await (await fetch(base + savedWebp.referenceImage.url)).arrayBuffer()), webp);
     await ok("/api/sprites/reference-image", { image: input });
-    const draft = { spritePrompt: "hero with a blue scarf", spriteModel: "openai/gpt-image-2.5-flare",
+    const draft = { spritePrompt: "black cat, super cute but not in overly kiddie kinda way, done in ink-and-wash aesthetic similar to the enclosed image, standing in big black boots and purple hoodie",
+      spriteModel: "openai/gpt-image-2.5-flare",
       motionPrompt: "", motionModel: "x-ai/grok-imagine-video" };
     await ok("/api/projects/draft", draft);
     await ok("/api/projects/sprites/new", { value: "other" });
@@ -102,12 +103,23 @@ test("reference attachments validate bytes, persist per character, and guide all
     const calls = (await readFile(requestsFile, "utf8")).trim().split("\n").map(line => JSON.parse(line).body);
     assert.equal(calls.length, 3);
     assert.deepEqual(calls[0].input_references.map((ref: any) => ref.image_url.url), [input.dataUrl]);
-    for (const body of calls) assert.match(body.prompt, /hero with a blue scarf/);
-    for (const body of calls.slice(1)) {
-      assert.equal(body.input_references.length, 2);
-      assert.equal(body.input_references[1].image_url.url, input.dataUrl);
+    assert.match(calls[0].prompt, /text prompt takes priority/i);
+    assert.match(calls[0].prompt, /style or aesthetic reference/i);
+    assert.match(calls[0].prompt, /identity only when the text requests that character/i);
+    assert.doesNotMatch(calls[0].prompt, /Use the uploaded reference image for the character's appearance and identity/);
+    for (const body of calls) {
+      assert.ok(body.prompt.includes(draft.spritePrompt), "preserve the user's complete character description");
+      assert.doesNotMatch(body.prompt, /pixel-art style/);
     }
-    assert.equal(calls[1].input_references[0].image_url.url, calls[2].input_references[0].image_url.url);
+    const sideOriginalUrl = generated.view.referenceViews.side.replace(/side\.png$/, "side-original.png");
+    const sideOriginal = Buffer.from(await (await fetch(base + sideOriginalUrl)).arrayBuffer());
+    const generatedSide = `data:image/png;base64,${sideOriginal.toString("base64")}`;
+    for (const body of calls.slice(1)) {
+      assert.deepEqual(body.input_references.map((ref: any) => ref.image_url.url), [generatedSide],
+        "other angles must use the generated character, without reintroducing the uploaded subjects");
+      assert.match(body.prompt, /sole visual reference for identity and style/);
+    }
+    assert.equal(generated.view.spritePrompt, draft.spritePrompt);
     assert.equal((await post("/api/sprites/generate", { prompt: "fail-reference" })).status, 400);
     assert.deepEqual((await current()).referenceViews, generated.view.referenceViews);
     assert.equal((await current()).referenceImage.name, input.name);
