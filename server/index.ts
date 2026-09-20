@@ -10,6 +10,7 @@ import { changeMusic, deleteMusic, musicView, readMusic, saveMusicDraft, commitM
 import { decodeMusic, prepareMusicWav, MUSIC_SAMPLE_RATE } from "./music-audio.js";
 import { stageAnimationAssets } from "./animation-assets.js";
 import { generateCharacterReferences } from "./character-references.js";
+import { stageReferenceImage, referenceImageDataUrl } from "./reference-image.js";
 import { existsSync } from "node:fs";
 import {
   DEFAULT_IMAGE_MODEL,
@@ -52,6 +53,7 @@ import {
   assetName,
   stageAnimationImage,
   commitCharacterReferences,
+  commitReferenceImage,
   type ProjectManifest,
 } from "./projects.js";
 
@@ -240,6 +242,22 @@ app.post("/api/projects/animations/:action", async (req, res) => {
   } catch (err) { handleError(err, res); }
 });
 
+app.post("/api/sprites/reference-image", async (req, res) => {
+  let staged: string | undefined;
+  try {
+    if (!req.get("X-Project-Name") || !req.get("X-Sprite-Id")) throw new Error("Select a character first (X-Sprite-Id is required)");
+    await readManifest();
+    const image = await stageReferenceImage(req.body?.image);
+    staged = image ? spriteFile(image.path) : undefined;
+    await commitReferenceImage(image);
+    staged = undefined;
+    res.json({ referenceImage: toView(await readManifest()).referenceImage });
+  } catch (err) {
+    if (staged) await rm(path.dirname(staged), { recursive: true, force: true }).catch(() => {});
+    handleError(err, res);
+  }
+});
+
 app.post("/api/projects/draft", async (req, res) => {
   try {
     const patch: Partial<ProjectManifest> = {
@@ -322,7 +340,7 @@ app.post("/api/sprites/generate", requireKey, async (req, res) => {
       throw new Error("unsupported image model");
     }
     const model = requestedModel ?? DEFAULT_IMAGE_MODEL;
-    const generated = await generateCharacterReferences(prompt, model);
+    const generated = await generateCharacterReferences(prompt, model, await referenceImageDataUrl(current.referenceImage));
     staged = generated.directory;
 
     await commitCharacterReferences({

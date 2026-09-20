@@ -287,6 +287,23 @@ button {
   color: var(--text-subtle);
 }
 
+.reference-attachment, .prompt-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.reference-attachment__button, .prompt-copy {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 32px; width: 32px; height: 32px; padding: 6px;
+  border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.reference-attachment__button:hover:not(:disabled), .prompt-copy:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); }
+.reference-attachment__button:focus-visible, .prompt-copy:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.reference-attachment__button:disabled, .prompt-copy:disabled { opacity: .45; cursor: default; }
+.reference-attachment__preview {
+  display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg);
+}
+.reference-attachment__preview[hidden] { display: none; }
+.reference-attachment__preview img { width: 48px; height: 48px; object-fit: contain; border-radius: 4px; background: white; }
+.reference-attachment__preview span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+
 .select {
   width: 100%;
   appearance: none;

@@ -18,6 +18,8 @@ export type AppStatus =
   | "error";
 
 export interface AppState {
+  referenceImage: ProjectView["referenceImage"];
+  referenceImageLoading: boolean;
   referenceViews: Partial<Record<ReferenceView, string>>;
   referenceAlignment: ProjectView["referenceAlignment"];
   referenceView: ReferenceView;
@@ -51,6 +53,7 @@ export interface AppState {
 
 export function createInitialState(): AppState {
   return {
+    referenceImage: null, referenceImageLoading: false,
     referenceViews: {}, referenceAlignment: null, referenceView: "side",
     startImage: null, endImage: null, imageSources: [],
     project: null,
@@ -88,6 +91,7 @@ export function cacheBust(url: string | null, key: string): string | null {
 export function hydrateFromView(view: ProjectView): Partial<AppState> {
   const v = view.updatedAt;
   return {
+    referenceImage: view.referenceImage ? { ...view.referenceImage, url: cacheBust(view.referenceImage.url, v)! } : null,
     referenceViews: Object.fromEntries(Object.entries(view.referenceViews ?? (view.spriteUrl ? { side: view.spriteUrl } : {}))
       .map(([key, url]) => [key, cacheBust(url, v)!])),
     referenceAlignment: view.referenceAlignment ?? null,
