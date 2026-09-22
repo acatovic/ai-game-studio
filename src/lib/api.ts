@@ -1,6 +1,7 @@
 import type { ReferenceView, ImageSource, ImageSourceOption } from "./character";
 import type { VideoFrameCapabilities } from "./video-capabilities";
 import type { ReferenceImageAttachment } from "./reference-image";
+import type { FrameSize } from "./frame-size";
 
 export interface ProjectView {
   referenceImage: ReferenceImageAttachment | null;
@@ -22,6 +23,8 @@ export interface ProjectView {
   spriteDimensions: { w: number; h: number } | null;
   frames: string[];
   selectedFrameIndices: number[];
+  frameSize: FrameSize;
+  spritesheetFrameSize: number | null;
   spritesheetUrl: string | null;
   spritesheetFrameCount: number | null;
   previewGifUrl: string | null;
@@ -149,8 +152,8 @@ export function saveSelection(selectedIndices: number[]): Promise<ProjectView> {
   return postJson("/api/projects/selection", { selectedIndices });
 }
 
-export function saveSpritesheet(dataUrl: string): Promise<ProjectView> {
-  return postJson("/api/projects/spritesheet", { dataUrl });
+export function saveSpritesheet(dataUrl: string, frameSize: FrameSize): Promise<ProjectView> {
+  return postJson("/api/projects/spritesheet", { dataUrl, frameSize });
 }
 
 export async function checkHealth(): Promise<{ ok: boolean; hasApiKey: boolean }> {
@@ -165,7 +168,7 @@ export function deleteSprite(): Promise<ProjectView> {
   return postJson("/api/projects/sprites/delete", {});
 }
 export function saveDraft(draft: { spritePrompt: string; motionPrompt: string; spriteModel: string; motionModel: string;
-  startImage?: ImageSource | null; endImage?: ImageSource | null }): Promise<ProjectView> {
+  startImage?: ImageSource | null; endImage?: ImageSource | null; frameSize?: FrameSize }): Promise<ProjectView> {
   return postJson("/api/projects/draft", draft);
 }
 

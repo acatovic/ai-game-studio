@@ -86,7 +86,8 @@ test('API requires explicit project context and serves assets from project stora
     await writeFile(path.join(animationDir, 'frames/frame-00001.png'), framePng);
     await writeFile(animationFile, JSON.stringify({ ...animation, frames: [`animations/${walkingId}/frames/frame-00001.png`] }));
     assert.equal((await post('/api/projects/selection', { selectedIndices: [0] })).status, 200);
-    response = await post('/api/projects/spritesheet', { dataUrl: `data:image/png;base64,${framePng.toString('base64')}` });
+    const sheetPng = pngFixture(128, 128, Array.from({ length: 128 * 128 * 4 }, (_, i) => [255, 0, 0, 128][i % 4]));
+    response = await post('/api/projects/spritesheet', { dataUrl: `data:image/png;base64,${sheetPng.toString('base64')}` });
     assert.equal(response.status, 200);
     const saved = await response.json();
     assert.ok(saved.spritesheetUrl.endsWith('/walking.png'));
@@ -95,7 +96,7 @@ test('API requires explicit project context and serves assets from project stora
     const ase = Buffer.from(await (await fetch(base + saved.asepriteUrl)).arrayBuffer());
     assert.equal(ase.readUInt16LE(4), 0xa5e0);
     assert.equal(ase.readUInt16LE(6), 1);
-    assert.deepEqual(Buffer.from(await (await fetch(base + saved.spritesheetUrl)).arrayBuffer()), framePng);
+    assert.deepEqual(Buffer.from(await (await fetch(base + saved.spritesheetUrl)).arrayBuffer()), sheetPng);
     // Rejected updates preserve the last complete pair.
     assert.equal((await post('/api/projects/spritesheet', { dataUrl: 'data:image/png;base64,AAAA' })).status, 400);
     assert.equal((await post('/api/projects/selection', { selectedIndices: [-1] })).status, 400);

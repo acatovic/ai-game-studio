@@ -1,3 +1,5 @@
+import { DEFAULT_FRAME_SIZE, validateFrameSize, type FrameSize } from "./frame-size";
+
 export async function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -10,7 +12,7 @@ export async function loadImage(src: string): Promise<HTMLImageElement> {
 
 export interface SpritesheetOptions {
   frameSrcs: string[];
-  cellSize?: number;
+  cellSize?: FrameSize;
 }
 
 export interface SpritesheetResult {
@@ -21,8 +23,9 @@ export interface SpritesheetResult {
 
 export async function composeSpritesheet({
   frameSrcs,
-  cellSize = 128,
+  cellSize = DEFAULT_FRAME_SIZE,
 }: SpritesheetOptions): Promise<SpritesheetResult> {
+  validateFrameSize(cellSize);
   if (frameSrcs.length === 0) {
     throw new Error("no frames selected");
   }
@@ -41,7 +44,11 @@ export async function composeSpritesheet({
     drawContained(ctx, images[i], i * cellSize, 0, cellSize, cellSize);
   }
 
-  return { dataUrl: canvas.toDataURL("image/png"), cols, rows };
+  const dataUrl = canvas.toDataURL("image/png");
+  if (!dataUrl.startsWith("data:image/png;base64,")) {
+    throw new Error("This spritesheet is too wide for your browser. Select fewer frames or a smaller frame size.");
+  }
+  return { dataUrl, cols, rows };
 }
 
 function drawContained(

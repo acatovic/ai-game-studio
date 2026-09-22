@@ -38,12 +38,15 @@ The project implementation now supersedes the older working-copy/snapshot detail
 
 ## Characters and animations
 
+- Frame size is an animation draft setting: 64, 128 (default), or 256. The animated picker and **Update Spritesheet** belong in column 3. Apply sizing only during composition; preserve reference, video and extracted-frame resolutions.
+- Persist `frameSize` on Save, navigation and Close; keep `spritesheetFrameSize` separate so a draft size change does not relabel previous output. Legacy animations default to 128. PNG and Aseprite must have matching selected-size square frames; preview GIFs use those composed frames.
+- Size draft and spritesheet writes require explicit `X-Animation-Id`. Validate size and PNG dimensions before staging output. Rename and duplicate preserve both size fields.
 - A project’s `sprites` entries now represent named characters. Each character has one reference PNG named after it and a version-2 `sprite.json`.
 - Each character owns multiple named animations, tracked in `animations/<animation-name>/animation.json`. Motion prompts, models, frames, selections, and outputs belong to the animation.
 - Character and animation IDs equal their folder/UI names. Rename moves the folder and updates all affected manifest paths; name collisions are rejected. New characters have no animations until the user adds one.
 - Requests include `X-Animation-Id` alongside project and character headers. Never use another tab’s active animation for a scoped write.
 - Generating an animation automatically composes and saves its PNG and Aseprite pair. Updating the frame selection requires **Update Spritesheet** to rebuild the pair. There are no export buttons.
-- Both formats contain the same 128×128 frames. Server-side Aseprite encoding decodes the composed PNG with ffmpeg and writes a 12 fps animation.
+- Both formats contain the same square frames at the selected size. Server-side Aseprite encoding decodes the composed PNG with ffmpeg and writes a 12 fps animation.
 - Paired outputs use the animation name and are staged in a revision directory before the manifest is updated. Failed saves preserve the previous pair. Keep generation runs isolated per animation.
 - Opening a legacy character migrates its single motion to the first animation, creates Aseprite alongside its existing PNG, and preserves original files. Character regeneration does not erase existing animations.
 - Run `npm run build` and `node --import tsx --test tests/*.test.ts` for these changes.
