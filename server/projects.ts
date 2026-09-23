@@ -6,6 +6,7 @@ import { readPngDims } from "./files.js";
 import { DEFAULT_IMAGE_MODEL } from "./image.js";
 import type { SavedReferenceImage } from "./reference-image.js";
 import type { ReferenceImageAttachment } from "../src/lib/reference-image.js";
+import { DEFAULT_FRAME_SIZE, type FrameSize } from "../src/lib/frame-size.js";
 import { createHash, randomUUID } from "node:crypto";
 import { REFERENCE_VIEWS, REFERENCE_LABELS, sourceKey, type ReferenceView, type ImageSource,
   type ImageSourceOption } from "../src/lib/character.js";
@@ -29,6 +30,8 @@ export interface SavedAnimationImage {
 }
 export interface ReferenceAlignment { canvasSize: number; height: number; top: number; centerX: number }
 interface AnimationManifest extends AnimationSummary {
+  frameSize?: FrameSize;
+  spritesheetFrameSize?: number | null;
   startImage?: SavedAnimationImage | null;
   endImage?: SavedAnimationImage | null;
   motionPrompt: string;
@@ -57,6 +60,8 @@ interface CharacterManifest {
 }
 
 export interface ProjectManifest {
+  frameSize: FrameSize;
+  spritesheetFrameSize: number | null;
   referenceImage: SavedReferenceImage | null;
   referenceViews: Partial<Record<ReferenceView, string>>;
   referenceAlignment: ReferenceAlignment | null;
@@ -83,6 +88,8 @@ export interface ProjectManifest {
 }
 
 export interface ProjectView {
+  frameSize: FrameSize;
+  spritesheetFrameSize: number | null;
   referenceImage: ReferenceImageAttachment | null;
   referenceViews: Partial<Record<ReferenceView, string>>;
   referenceAlignment: ReferenceAlignment | null;
@@ -110,6 +117,8 @@ export interface ProjectView {
 
 export function emptyManifest(name: string): ProjectManifest {
   return {
+    frameSize: DEFAULT_FRAME_SIZE,
+    spritesheetFrameSize: null,
     referenceImage: null,
     referenceViews: {}, referenceAlignment: null, startImage: null, endImage: null, imageSources: [],
     name,
@@ -208,7 +217,8 @@ async function characterManifest(): Promise<CharacterManifest> {
     const png = await readFile(spriteFile(legacy.spritesheet));
     const dims = readPngDims(png);
     const count = dims ? dims.w / dims.h : 0;
-    Object.assign(animation, await stageAnimationAssets(png, count, animation.name, id), { spritesheetFrameCount: count });
+    Object.assign(animation, await stageAnimationAssets(png, count, animation.name, id),
+      { spritesheetFrameCount: count, spritesheetFrameSize: dims!.h });
   }
   let reference = legacy.sprite;
   if (reference) {
@@ -255,6 +265,8 @@ export async function readManifest(): Promise<ProjectManifest> {
   if (!character.animations.some(a => a.id === id)) throw new Error("Animation not found");
   const animation = JSON.parse(await readFile(spriteFile(animationPath(id, "animation.json")), "utf8")) as AnimationManifest;
   return { ...emptyManifest(doc.name), ...character, ...animation, ...references, name: doc.name, activeAnimationId: id,
+    frameSize: animation.frameSize ?? DEFAULT_FRAME_SIZE,
+    spritesheetFrameSize: animation.spritesheet ? animation.spritesheetFrameSize ?? DEFAULT_FRAME_SIZE : null,
     spriteModel: character.spriteModel === "openai/gpt-image-2.5-sunburst" ? DEFAULT_IMAGE_MODEL : character.spriteModel,
     project: { ...doc, activeSpriteId: context.spriteId } };
 }
@@ -271,6 +283,7 @@ export async function updateSprite(patch: Partial<ProjectManifest>): Promise<Pro
   const summary = character.animations.find(a => a.id === current.activeAnimationId)!;
   if (summary) {
   const animation: AnimationManifest = { ...summary, motionPrompt: updated.motionPrompt, motionModel: updated.motionModel,
+    frameSize: updated.frameSize, spritesheetFrameSize: updated.spritesheetFrameSize,
     startImage: updated.startImage, endImage: updated.endImage,
     frames: updated.frames, selectedFrameIndices: updated.selectedFrameIndices, spritesheet: updated.spritesheet,
     spritesheetFrameCount: updated.spritesheetFrameCount, aseprite: updated.aseprite, previewGif: updated.previewGif, updatedAt: updated.updatedAt };
@@ -337,6 +350,7 @@ export function toView(m: ProjectManifest): ProjectView {
     url: base + image.path,
   } : null;
   return { project: doc, name: doc.name, activeAnimationId: m.activeAnimationId, animations: m.animations,
+    frameSize: m.frameSize, spritesheetFrameSize: m.spritesheetFrameSize,
     referenceImage: m.referenceImage ? { name: m.referenceImage.name, url: base + m.referenceImage.path } : null,
     referenceViews: Object.fromEntries(Object.entries(m.referenceViews).map(([view, file]) => [view, base + file])),
     referenceAlignment: m.referenceAlignment,
@@ -491,6 +505,7 @@ export async function changeAnimation(action: "new" | "load" | "rename" | "dupli
       character.animations.push({ id, name });
       await writeJson(spriteFile(animationPath(id, "animation.json")), {
         id, name, motionPrompt: "", motionModel: current.motionModel, frames: [], selectedFrameIndices: [],
+        frameSize: DEFAULT_FRAME_SIZE, spritesheetFrameSize: null,
         spritesheet: null, spritesheetFrameCount: null, aseprite: null, previewGif: null, updatedAt: new Date().toISOString(),
       });
     } else {

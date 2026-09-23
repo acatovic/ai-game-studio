@@ -22,6 +22,7 @@ import {
 import { mountMusic } from "./components/music";
 import { confirmDelete } from "./components/confirm-delete";
 import { mountPreviewBackground } from "./components/preview-background";
+import { mountFrameSize } from "./components/frame-size";
 import { Store, createInitialState, hydrateFromView } from "./lib/state";
 import { composeSpritesheet } from "./lib/spritesheet";
 import { REFERENCE_VIEWS, REFERENCE_LABELS, sourceKey, type ImageSourceOption } from "./lib/character";
@@ -133,6 +134,12 @@ export function mountApp(root: HTMLElement) {
 
   const sheetPreview = root.querySelector<HTMLDivElement>("#sheet-preview")!;
   const sheetMeta = root.querySelector<HTMLDivElement>("#sheet-meta")!;
+  const sheetStatus = root.querySelector<HTMLDivElement>("#sheet-status")!;
+  const sheetSizeHint = root.querySelector<HTMLElement>("#sheet-size-hint")!;
+  const frameSizePicker = mountFrameSize(root.querySelector<HTMLElement>("#frame-size")!, frameSize => {
+    setStatus(sheetStatus, "");
+    store.set({ frameSize });
+  });
   const gifPreview = root.querySelector<HTMLDivElement>("#gif-preview")!;
   mountPreviewBackground(root.querySelector<HTMLElement>("#preview-background")!, [sheetPreview, gifPreview]);
 
@@ -280,6 +287,7 @@ export function mountApp(root: HTMLElement) {
     const next = new Set(state.selectedFrameIndices);
     if (next.has(index)) next.delete(index);
     else next.add(index);
+    setStatus(sheetStatus, "");
     store.set({ selectedFrameIndices: next });
     scheduleSelectionPersist();
   });
@@ -290,15 +298,18 @@ export function mountApp(root: HTMLElement) {
       .map(i => state.frames[i]).filter(Boolean);
     if (!selected.length) throw new Error("Select at least one frame to include.");
     store.set({ previewGifBuilding: true });
-    setStatus(framesStatus, `${spinner()}Saving PNG and Aseprite…`);
+    setStatus(sheetStatus, `${spinner()}Saving PNG and Aseprite…`);
     try {
       await persistDraft();
-      const sheet = await composeSpritesheet({ frameSrcs: selected });
-      const view = await saveSpritesheet(sheet.dataUrl);
+      const sheet = await composeSpritesheet({ frameSrcs: selected, cellSize: state.frameSize });
+      const view = await saveSpritesheet(sheet.dataUrl, state.frameSize);
       await applyView(view);
-      setStatus(framesStatus, view.previewGifUrl
+      setStatus(sheetStatus, view.previewGifUrl
         ? "PNG, Aseprite and animated preview saved."
         : "PNG and Aseprite saved. Animated preview could not be built.", "success");
+    } catch (err) {
+      setStatus(sheetStatus, err instanceof Error ? err.message : "Could not save animation", "error");
+      throw err;
     } finally {
       store.set({ previewGifBuilding: false });
     }
@@ -306,7 +317,7 @@ export function mountApp(root: HTMLElement) {
 
   generateSheetBtn.addEventListener("click", async () => {
     try { await saveCurrentAnimation(); }
-    catch (err) { setStatus(framesStatus, err instanceof Error ? err.message : "Could not save animation", "error"); }
+    catch (err) { setStatus(sheetStatus, err instanceof Error ? err.message : "Could not save animation", "error"); }
   });
 
   // ---- New / Save / Load wiring ----
@@ -504,6 +515,7 @@ export function mountApp(root: HTMLElement) {
     if (state.activeAnimationId) await saveSelection([...state.selectedFrameIndices]);
     await saveDraft({ spritePrompt: state.spritePrompt, motionPrompt: state.motionPrompt,
       spriteModel: state.spriteModel, motionModel: state.motionModel,
+      ...(state.activeAnimationId ? { frameSize: state.frameSize } : {}),
       startImage: state.startImage?.source ?? null, endImage: state.endImage?.source ?? null });
   }
   async function persistBeforeNavigation() {
@@ -529,6 +541,7 @@ export function mountApp(root: HTMLElement) {
       && store.get().currentProjectName === view.name;
     setStatus(spriteStatus, "");
     setStatus(framesStatus, "");
+    setStatus(sheetStatus, "");
     setActiveProject(view);
     await music.openProject(view.name);
     const patch = { ...hydrateFromView(view), status: "idle" as const, errorMessage: null };
@@ -610,7 +623,13 @@ export function mountApp(root: HTMLElement) {
     const videoModel = state.videoModels.find(model => model.id === state.motionModel);
     const frameError = videoModel ? videoFrameError(videoModel, !!state.startImage, !!state.endImage) : null;
     generateFramesBtn.disabled = busy || !hasAnimation || (!state.spriteSrc && !state.startImage) || !!frameError;
-    generateSheetBtn.disabled = busy || state.selectedFrameIndices.size === 0;
+    generateSheetBtn.disabled = busy || !hasAnimation || state.selectedFrameIndices.size === 0;
+    frameSizePicker.update(state.frameSize, busy || !hasAnimation);
+    const sizeChanged = state.spritesheetFrameSize !== null && state.spritesheetFrameSize !== state.frameSize;
+    sheetSizeHint.textContent = !hasAnimation ? "Add an animation to choose its frame size."
+      : sizeChanged ? `Update to apply ${state.frameSize} × ${state.frameSize} px. Saved output is ${state.spritesheetFrameSize} × ${state.spritesheetFrameSize} px.`
+      : "Size of each frame in the PNG and Aseprite files.";
+    sheetSizeHint.classList.toggle("sheet-size-hint--pending", sizeChanged);
 
 
     for (const view of REFERENCE_VIEWS) {
@@ -661,7 +680,7 @@ export function mountApp(root: HTMLElement) {
     if (state.spritesheetSrc && state.spritesheetCols) {
       sheetPreview.innerHTML = `<img src="${state.spritesheetSrc}" alt="Spritesheet" />`;
       const animationName = state.animations.find(a => a.id === state.activeAnimationId)?.name ?? "animation";
-      sheetMeta.textContent = `${animationName}.png${state.asepriteSrc ? ` + ${animationName}.aseprite` : " (regenerate to save Aseprite)"} · ${state.spritesheetCols} frames`;
+      sheetMeta.textContent = `${animationName}.png${state.asepriteSrc ? ` + ${animationName}.aseprite` : " (regenerate to save Aseprite)"} · ${state.spritesheetCols} frames · ${state.spritesheetFrameSize} × ${state.spritesheetFrameSize} px`;
     } else {
       sheetPreview.innerHTML = `<span class="sheet-preview__placeholder">Generate a spritesheet to preview here</span>`;
       const pending = state.selectedFrameIndices.size;
@@ -973,15 +992,20 @@ function renderShell(): string {
               <div class="frames-section__label">Select frames to include</div>
               <div id="frames-grid" class="frames-grid"></div>
             </div>
-            <button id="btn-generate-sheet" class="btn btn--primary btn--block btn--lg" type="button">
-              ${gridIcon}
-              Update Spritesheet
-            </button>
             </div>
           </section>
 
           <section class="card">
             <h2 class="card__title">3. Spritesheet Preview</h2>
+            <div class="sheet-controls">
+              <div id="frame-size" class="preview-background frame-size"></div>
+              <button id="btn-generate-sheet" class="btn btn--primary btn--block btn--lg" type="button">
+                ${gridIcon}
+                Update Spritesheet
+              </button>
+              <p id="sheet-size-hint" class="sheet-size-hint" aria-live="polite"></p>
+              <div id="sheet-status" class="status" role="status"></div>
+            </div>
             <div id="preview-background" class="preview-background"></div>
             <div id="sheet-preview" class="sheet-preview">
               <span class="sheet-preview__placeholder">Generate a spritesheet to preview here</span>
@@ -989,7 +1013,7 @@ function renderShell(): string {
             <div class="sheet-footer">
               <div id="sheet-meta" class="sheet-footer__meta">No spritesheet yet</div>
             </div>
-            <p class="asset-save-note">PNG and Aseprite are saved automatically in your project. Update the spritesheet after changing the frame selection.</p>
+            <p class="asset-save-note">PNG and Aseprite are saved automatically in your project. Update the spritesheet after changing the frame selection or size.</p>
             <div class="gif-section">
               <div class="gif-section__label">Animated Preview</div>
               <div id="gif-preview" class="gif-preview">

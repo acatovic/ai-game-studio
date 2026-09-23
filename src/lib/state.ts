@@ -5,6 +5,7 @@ import type {
   VideoModelOption,
 } from "./api";
 import type { ReferenceView, ImageSourceOption } from "./character";
+import { DEFAULT_FRAME_SIZE, type FrameSize } from "./frame-size";
 
 export const DEFAULT_IMAGE_MODEL = "openai/gpt-image-2.5-flare";
 export const DEFAULT_VIDEO_MODEL = "x-ai/grok-imagine-video";
@@ -43,6 +44,8 @@ export interface AppState {
   spriteDimensions: { w: number; h: number } | null;
   frames: string[];
   selectedFrameIndices: Set<number>;
+  frameSize: FrameSize;
+  spritesheetFrameSize: number | null;
   spritesheetSrc: string | null;
   spritesheetCols: number | null;
   previewGifSrc: string | null;
@@ -73,6 +76,8 @@ export function createInitialState(): AppState {
     spriteDimensions: null,
     frames: [],
     selectedFrameIndices: new Set(),
+    frameSize: DEFAULT_FRAME_SIZE,
+    spritesheetFrameSize: null,
     spritesheetSrc: null,
     spritesheetCols: null,
     previewGifSrc: null,
@@ -110,6 +115,8 @@ export function hydrateFromView(view: ProjectView): Partial<AppState> {
     spriteDimensions: view.spriteDimensions,
     frames: view.frames.map((f) => cacheBust(f, v)!),
     selectedFrameIndices: new Set(view.selectedFrameIndices),
+    frameSize: view.frameSize ?? DEFAULT_FRAME_SIZE,
+    spritesheetFrameSize: view.spritesheetUrl ? view.spritesheetFrameSize ?? DEFAULT_FRAME_SIZE : null,
     spritesheetSrc: cacheBust(view.spritesheetUrl, v),
     spritesheetCols: view.spritesheetUrl ? view.spritesheetFrameCount : null,
     previewGifSrc: cacheBust(view.previewGifUrl, v),

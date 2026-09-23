@@ -69,10 +69,12 @@ Selected images are copied into the target animation when you save, navigate, or
 
 ## Refine and manage animations
 
-Click frame tiles to include or exclude them, then click **Update Spritesheet** to rebuild the PNG, Aseprite, and preview. Frame selection saves automatically, but the generated files only reflect a changed selection after this update. Keep at least one frame selected.
+Click frame tiles to include or exclude them, then click **Update Spritesheet** in column 3 to rebuild the PNG, Aseprite, and preview. Frame selection saves automatically, but the generated files only reflect a changed selection after this update. Keep at least one frame selected.
+
+The **Frame size** picker above that button expands into **64×64**, **128×128** (default), and **256×256** options. Size belongs to each animation and is saved with its draft on Save, navigation, and Close. After changing it, click **Update Spritesheet** to apply the size to both output formats and the animated preview. The size is applied during composition, preserving proportions and transparent padding. References, source video, and extracted frames stay at their working resolutions, so resizing requires no new generation or extraction. The output caption shows the saved size until the update succeeds.
 
 - **Rename** updates the character or animation folder and affected asset paths.
-- **Duplicate** creates an independent animation with its prompts, model, saved poses, frame selection, source clips, and outputs.
+- **Duplicate** creates an independent animation with its prompts, model, saved poses, frame selection, frame size, source clips, and outputs.
 - Character, animation, and sound actions appear in the order **Add**, **Rename**, **Delete**. Animation **Duplicate** follows these actions.
 - The character **bin button** deletes the selected character, its references, and all of its animations and files.
 - The animation **bin button** deletes the selected animation and its generated files. Both deletion dialogs name the item and offer **Yes** / **No**; **No** or Escape cancels.
@@ -98,10 +100,10 @@ By default:
     └── animations/<animation>/
         ├── animation.json
         ├── inputs/<id>.png
-        ├── preview.gif
         ├── assets/<revision>/
         │   ├── <animation>.png
-        │   └── <animation>.aseprite
+        │   ├── <animation>.aseprite
+        │   └── preview.gif
         └── runs/<run>/
             ├── source.mp4
             └── frames/
@@ -111,7 +113,7 @@ By default:
 
 `sprite.json` identifies the current reference views. To find an animation's current output, open its `animation.json` and follow `spritesheet`, `aseprite`, and `previewGif`. These paths are relative to the character folder. Older revisions remain on disk, so use the manifest rather than choosing a revision folder by its name.
 
-The PNG is a horizontal strip of **128×128 frames**. The Aseprite file contains the same frames at approximately **12 fps**. Import the PNG into your game engine or open the Aseprite file to edit it. Fine reference details may simplify when reduced to the export size.
+The PNG is a horizontal strip of **64×64**, **128×128**, or **256×256 frames**, according to the animation's frame size. The Aseprite file contains the same frames at approximately **12 fps**. Import the PNG into your game engine or open the Aseprite file to edit it. Fine reference details may simplify when reduced to the output size.
 
 ## Troubleshooting
 

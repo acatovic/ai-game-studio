@@ -9,6 +9,7 @@ import { MUSIC_MODELS, DEFAULT_MUSIC_MODEL, validateMusicSettings, generateMusic
 import { changeMusic, deleteMusic, musicView, readMusic, saveMusicDraft, commitMusicOutput, musicFile, newMusicRevision } from "./music-projects.js";
 import { decodeMusic, prepareMusicWav, MUSIC_SAMPLE_RATE } from "./music-audio.js";
 import { stageAnimationAssets } from "./animation-assets.js";
+import { validateFrameSize } from "../src/lib/frame-size.js";
 import { generateCharacterReferences } from "./character-references.js";
 import { stageReferenceImage, referenceImageDataUrl } from "./reference-image.js";
 import { existsSync } from "node:fs";
@@ -36,6 +37,7 @@ import {
   downloadVideo,
   ensureInsideRoot,
   spriteFile,
+  readPngDims,
 } from "./files.js";
 import {
   deleteSavedProject,
@@ -275,6 +277,10 @@ app.post("/api/projects/draft", async (req, res) => {
       if (typeof value !== "string" || value.length > 2000) throw new Error(`Invalid ${key}: expected a model ID of up to 2,000 characters`);
       patch[key] = value;
     }
+    if (req.body?.frameSize !== undefined) {
+      if (!req.get("X-Animation-Id")) throw new Error("Select an animation first (X-Animation-Id is required)");
+      patch.frameSize = validateFrameSize(req.body.frameSize);
+    }
     const current = await readManifest();
     for (const key of ["startImage", "endImage"] as const) {
       if (req.body?.[key] === undefined) continue;
@@ -310,18 +316,26 @@ app.post("/api/projects/selection", async (req, res) => {
 
 app.post("/api/projects/spritesheet", async (req, res) => {
   try {
+    if (!req.get("X-Animation-Id")) throw new Error("Select an animation first (X-Animation-Id is required)");
     const current = await readManifest();
     if (!current.activeAnimationId) throw new Error("Add an animation first");
     const dataUrl = asString(req.body?.dataUrl, "dataUrl", 50_000_000);
     const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
     if (!match) throw new Error("Expected a PNG spritesheet");
+    const frameSize = validateFrameSize(req.body?.frameSize === undefined ? current.frameSize : req.body.frameSize);
+    const png = Buffer.from(match[1], "base64");
+    const dimensions = readPngDims(png);
+    if (!dimensions || dimensions.h !== frameSize || dimensions.w !== frameSize * current.selectedFrameIndices.length) {
+      throw new Error("Spritesheet dimensions must match the selected frame size and frame count");
+    }
     const name = assetName(current.animations.find(a => a.id === current.activeAnimationId)!.name);
-    const assets = await stageAnimationAssets(Buffer.from(match[1], "base64"), current.selectedFrameIndices.length, name, current.activeAnimationId);
-    let m = await updateSprite({ ...assets, spritesheetFrameCount: current.selectedFrameIndices.length, previewGif: null });
+    const assets = await stageAnimationAssets(png, current.selectedFrameIndices.length, name, current.activeAnimationId);
+    let m = await updateSprite({ ...assets, frameSize, spritesheetFrameSize: frameSize,
+      spritesheetFrameCount: current.selectedFrameIndices.length, previewGif: null });
 
-    // Best-effort GIF build from current selection
+    // Best-effort preview from the same composed frames, in the new output revision.
     try {
-      const gifName = await buildPreviewGif(m.frames, m.selectedFrameIndices, animationPath(m.activeAnimationId));
+      const gifName = await buildPreviewGif(assets.spritesheet, m.spritesheetFrameCount!, path.posix.dirname(assets.spritesheet));
       m = await updateSprite({ previewGif: gifName });
     } catch (gifErr) {
       const msg = gifErr instanceof Error ? gifErr.message : String(gifErr);
@@ -408,6 +422,7 @@ app.post("/api/sprites/animate", requireKey, async (req, res) => {
       selectedFrameIndices: frames.map((_, i) => i),
       spritesheet: null,
       spritesheetFrameCount: null,
+      spritesheetFrameSize: null,
       aseprite: null,
       previewGif: null,
     });
