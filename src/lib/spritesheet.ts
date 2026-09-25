@@ -13,6 +13,7 @@ export async function loadImage(src: string): Promise<HTMLImageElement> {
 export interface SpritesheetOptions {
   frameSrcs: string[];
   cellSize?: FrameSize;
+  smooth?: boolean;
 }
 
 export interface SpritesheetResult {
@@ -24,6 +25,7 @@ export interface SpritesheetResult {
 export async function composeSpritesheet({
   frameSrcs,
   cellSize = DEFAULT_FRAME_SIZE,
+  smooth = false,
 }: SpritesheetOptions): Promise<SpritesheetResult> {
   validateFrameSize(cellSize);
   if (frameSrcs.length === 0) {
@@ -37,7 +39,8 @@ export async function composeSpritesheet({
   canvas.height = rows * cellSize;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("canvas 2d context unavailable");
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = smooth;
+  if (smooth) ctx.imageSmoothingQuality = "high";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   for (let i = 0; i < images.length; i++) {

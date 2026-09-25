@@ -44,7 +44,15 @@ test('API requires explicit project context and serves assets from project stora
     const first = await response.json();
     assert.equal(first.project.activeSpriteId, 'hero');
     assert.deepEqual(first.animations, []);
+    assert.equal(first.styleId, null);
     headers['X-Sprite-Id'] = first.project.activeSpriteId;
+    response = await post('/api/projects/draft', { spritePrompt: 'hero', styleId: 'unknown-style', motionPrompt: '', spriteModel: 'openai/gpt-image-2', motionModel: 'x-ai/grok-imagine-video' });
+    assert.equal(response.status, 400);
+    assert.equal((await (await fetch(base + '/api/projects/current', { headers })).json()).styleId, null);
+    response = await post('/api/projects/draft', { spritePrompt: 'hero', styleId: 'cinematic-pixel', motionPrompt: '', spriteModel: 'openai/gpt-image-2', motionModel: 'x-ai/grok-imagine-video' });
+    assert.equal((await response.json()).styleId, 'cinematic-pixel');
+    response = await post('/api/projects/draft', { spritePrompt: 'hero', styleId: null, motionPrompt: '', spriteModel: 'openai/gpt-image-2', motionModel: 'x-ai/grok-imagine-video' });
+    assert.equal((await response.json()).styleId, null);
     response = await post('/api/projects/draft', { spritePrompt: 'hero', motionPrompt: '', spriteModel: 'openai/gpt-image-2', motionModel: 'x-ai/grok-imagine-video' });
     assert.equal(response.status, 200);
     const longDraft = { spritePrompt: 'a'.repeat(20_000), motionPrompt: 'b'.repeat(3_000),

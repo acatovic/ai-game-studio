@@ -28,6 +28,7 @@ import { composeSpritesheet } from "./lib/spritesheet";
 import { REFERENCE_VIEWS, REFERENCE_LABELS, sourceKey, type ImageSourceOption } from "./lib/character";
 import { videoFrameError } from "./lib/video-capabilities";
 import { REFERENCE_IMAGE_ACCEPT, isReferenceImageFile, readReferenceImage } from "./lib/reference-image";
+import { CHARACTER_STYLES, characterStyle, usesSmoothRendering, type CharacterStyleId } from "./lib/character-styles";
 import {
   chevronIcon,
   copyIcon,
@@ -70,6 +71,23 @@ export function mountApp(root: HTMLElement) {
 
   // ---- Refs ----
   const promptInput = root.querySelector<HTMLTextAreaElement>("#sprite-prompt")!;
+  const stylePicker = root.querySelector<HTMLDetailsElement>("#character-style-picker")!;
+  const stylePickerLabel = root.querySelector<HTMLElement>("#character-style-label")!;
+  const stylePickerSample = root.querySelector<HTMLElement>("#character-style-sample")!;
+  const stylePendingHint = root.querySelector<HTMLElement>("#character-style-pending")!;
+  const styleOptions = root.querySelector<HTMLElement>("#character-style-options")!;
+  styleOptions.addEventListener("click", event => {
+    const option = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-character-style]");
+    if (!option || option.disabled) return;
+    store.set({ styleId: option.dataset.characterStyle as CharacterStyleId || null });
+    stylePicker.open = false;
+  });
+  document.addEventListener("click", event => {
+    if (stylePicker.open && !stylePicker.contains(event.target as Node)) stylePicker.open = false;
+  });
+  stylePicker.addEventListener("keydown", event => {
+    if (event.key === "Escape") { stylePicker.open = false; stylePicker.querySelector("summary")?.focus(); }
+  });
   const referenceInput = root.querySelector<HTMLInputElement>("#reference-image-input")!;
   const attachReferenceBtn = root.querySelector<HTMLButtonElement>("#btn-attach-reference")!;
   const removeReferenceBtn = root.querySelector<HTMLButtonElement>("#btn-remove-reference")!;
@@ -237,7 +255,7 @@ export function mountApp(root: HTMLElement) {
     setStatus(spriteStatus, `${spinner()}Generating and aligning side, front and back views…`);
     try {
       await persistDraft();
-      const result = await generateSprite(prompt, store.get().spriteModel);
+      const result = await generateSprite(prompt, store.get().spriteModel, store.get().styleId);
       await applyView(result.view);
       store.set({ spriteSrc: result.dataUrl, referenceView: "side" });
       setStatus(spriteStatus, "Three aligned reference views ready.", "success");
@@ -301,7 +319,8 @@ export function mountApp(root: HTMLElement) {
     setStatus(sheetStatus, `${spinner()}Saving PNG and Aseprite…`);
     try {
       await persistDraft();
-      const sheet = await composeSpritesheet({ frameSrcs: selected, cellSize: state.frameSize });
+      const sheet = await composeSpritesheet({ frameSrcs: selected, cellSize: state.frameSize,
+        smooth: usesSmoothRendering(state.referenceStyleId) });
       const view = await saveSpritesheet(sheet.dataUrl, state.frameSize);
       await applyView(view);
       setStatus(sheetStatus, view.previewGifUrl
@@ -513,7 +532,7 @@ export function mountApp(root: HTMLElement) {
     const state = store.get();
     if (!state.project?.activeSpriteId) return;
     if (state.activeAnimationId) await saveSelection([...state.selectedFrameIndices]);
-    await saveDraft({ spritePrompt: state.spritePrompt, motionPrompt: state.motionPrompt,
+    await saveDraft({ spritePrompt: state.spritePrompt, styleId: state.styleId, motionPrompt: state.motionPrompt,
       spriteModel: state.spriteModel, motionModel: state.motionModel,
       ...(state.activeAnimationId ? { frameSize: state.frameSize } : {}),
       startImage: state.startImage?.source ?? null, endImage: state.endImage?.source ?? null });
@@ -540,6 +559,7 @@ export function mountApp(root: HTMLElement) {
     const sameCharacter = store.get().project?.activeSpriteId === view.project.activeSpriteId
       && store.get().currentProjectName === view.name;
     setStatus(spriteStatus, "");
+    stylePicker.open = false;
     setStatus(framesStatus, "");
     setStatus(sheetStatus, "");
     setActiveProject(view);
@@ -573,6 +593,8 @@ export function mountApp(root: HTMLElement) {
     for (const button of [homeNew, homeOpen, closeBtn, newBtn, saveBtn, loadBtn, addSpriteBtn, renameSpriteBtn, addAnimationBtn, renameAnimationBtn]) button.disabled = busy;
     const hasCharacter = !!state.project?.activeSpriteId;
     const hasAnimation = !!state.activeAnimationId;
+    root.querySelector<HTMLElement>("#sprites-workspace")!.classList.toggle("sprites-workspace--smooth",
+      usesSmoothRendering(state.referenceStyleId));
     root.querySelector<HTMLElement>(".columns")!.hidden = !hasCharacter;
     spritePicker.hidden = !hasCharacter;
     root.querySelector<HTMLElement>('label[for="sprite-picker"]')!.hidden = !hasCharacter;
@@ -594,6 +616,16 @@ export function mountApp(root: HTMLElement) {
     animationPicker.innerHTML = state.animations.map(a => `<option value="${escapeAttr(a.id)}">${escapeHtml(a.name)}</option>`).join("");
     animationPicker.value = state.activeAnimationId;
     promptInput.disabled = busy || !hasCharacter;
+    stylePicker.inert = busy || !hasCharacter;
+    if (busy) stylePicker.open = false;
+    stylePicker.classList.toggle("style-picker--disabled", busy || !hasCharacter);
+    stylePickerLabel.textContent = characterStyle(state.styleId)?.label ?? "Custom · no preset";
+    stylePickerSample.className = `style-picker__sample style-picker__sample--${state.styleId ?? "custom"}`;
+    stylePendingHint.hidden = !state.spriteSrc || state.styleId === state.referenceStyleId;
+    for (const option of styleOptions.querySelectorAll<HTMLButtonElement>("[data-character-style]")) {
+      option.disabled = busy || !hasCharacter;
+      option.setAttribute("aria-pressed", String((option.dataset.characterStyle || null) === state.styleId));
+    }
     copyCharacterPromptBtn.disabled = !hasCharacter || !state.spritePrompt.trim();
     copyMotionPromptBtn.disabled = !hasAnimation || !state.motionPrompt.trim();
     attachReferenceBtn.disabled = referenceInput.disabled = removeReferenceBtn.disabled = busy || !hasCharacter;
@@ -896,6 +928,30 @@ function renderShell(): string {
 
           <section class="card">
             <h2 class="card__title">1. Create Character</h2>
+            <div class="field">
+              <span id="art-style-field-label" class="field__label">Art style</span>
+              <details id="character-style-picker" class="style-picker">
+                <summary class="style-picker__summary" aria-labelledby="art-style-field-label character-style-label">
+                  <span id="character-style-sample" class="style-picker__sample style-picker__sample--custom" aria-hidden="true"></span>
+                  <span id="character-style-label">Custom · no preset</span>
+                  <span class="style-picker__chevron" aria-hidden="true">${chevronIcon}</span>
+                </summary>
+                <div id="character-style-options" class="style-picker__options" role="group" aria-label="Character art styles">
+                  ${CHARACTER_STYLES.map(style => `
+                    <button class="style-picker__option" type="button" data-character-style="${style.id}"
+                      aria-label="${escapeAttr(style.label)}: ${escapeAttr(style.description)}" aria-pressed="false">
+                      <span class="style-picker__art style-picker__art--${style.id}" aria-hidden="true">
+                        <span class="style-picker__figure"><span class="style-picker__head"></span><span class="style-picker__body"></span></span>
+                      </span>
+                      <span class="style-picker__option-label">${style.label}</span>
+                      <span class="style-picker__description">${style.description}</span>
+                    </button>`).join("")}
+                  <button class="style-picker__custom" type="button" data-character-style=""
+                    aria-label="Custom: describe the style in my prompt" aria-pressed="true">Custom · describe the style yourself</button>
+                </div>
+              </details>
+              <p id="character-style-pending" class="style-picker__pending" hidden>Regenerate Character to apply this style to the reference views.</p>
+            </div>
             <div id="character-prompt-field" class="field">
               <label class="field__label" for="sprite-prompt">Character Prompt</label>
               <textarea

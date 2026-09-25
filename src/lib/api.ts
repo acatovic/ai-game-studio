@@ -2,6 +2,7 @@ import type { ReferenceView, ImageSource, ImageSourceOption } from "./character"
 import type { VideoFrameCapabilities } from "./video-capabilities";
 import type { ReferenceImageAttachment } from "./reference-image";
 import type { FrameSize } from "./frame-size";
+import type { CharacterStyleId } from "./character-styles";
 
 export interface ProjectView {
   referenceImage: ReferenceImageAttachment | null;
@@ -16,6 +17,8 @@ export interface ProjectView {
   asepriteUrl: string | null;
   name: string;
   spritePrompt: string;
+  styleId: CharacterStyleId | null;
+  referenceStyleId: CharacterStyleId | null;
   spriteModel: string;
   motionPrompt: string;
   motionModel: string;
@@ -103,8 +106,9 @@ async function getJson<T>(path: string): Promise<T> {
 export function generateSprite(
   prompt: string,
   model?: string,
+  styleId?: CharacterStyleId | null,
 ): Promise<GenerateSpriteResponse> {
-  return postJson("/api/sprites/generate", { prompt, model });
+  return postJson("/api/sprites/generate", { prompt, model, styleId });
 }
 
 export function setReferenceImage(image: { name: string; dataUrl: string } | null): Promise<{ referenceImage: ReferenceImageAttachment | null }> {
@@ -167,7 +171,7 @@ export function changeSprite(action: "new" | "load" | "rename", value: string): 
 export function deleteSprite(): Promise<ProjectView> {
   return postJson("/api/projects/sprites/delete", {});
 }
-export function saveDraft(draft: { spritePrompt: string; motionPrompt: string; spriteModel: string; motionModel: string;
+export function saveDraft(draft: { spritePrompt: string; styleId: CharacterStyleId | null; motionPrompt: string; spriteModel: string; motionModel: string;
   startImage?: ImageSource | null; endImage?: ImageSource | null; frameSize?: FrameSize }): Promise<ProjectView> {
   return postJson("/api/projects/draft", draft);
 }

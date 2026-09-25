@@ -10,6 +10,7 @@ import { changeMusic, deleteMusic, musicView, readMusic, saveMusicDraft, commitM
 import { decodeMusic, prepareMusicWav, MUSIC_SAMPLE_RATE } from "./music-audio.js";
 import { stageAnimationAssets } from "./animation-assets.js";
 import { validateFrameSize } from "../src/lib/frame-size.js";
+import { characterImagePrompt, characterStyle, validateCharacterStyleId } from "../src/lib/character-styles.js";
 import { generateCharacterReferences } from "./character-references.js";
 import { stageReferenceImage, referenceImageDataUrl } from "./reference-image.js";
 import { existsSync } from "node:fs";
@@ -272,6 +273,7 @@ app.post("/api/projects/draft", async (req, res) => {
       spritePrompt: validatePrompt(req.body?.spritePrompt, "Character prompt", true),
       motionPrompt: validatePrompt(req.body?.motionPrompt, "Movement prompt", true),
     };
+    if (req.body?.styleId !== undefined) patch.styleId = validateCharacterStyleId(req.body.styleId);
     for (const key of ["spriteModel", "motionModel"] as const) {
       const value = req.body?.[key];
       if (typeof value !== "string" || value.length > 2000) throw new Error(`Invalid ${key}: expected a model ID of up to 2,000 characters`);
@@ -360,11 +362,15 @@ app.post("/api/sprites/generate", requireKey, async (req, res) => {
       throw new Error("unsupported image model");
     }
     const model = requestedModel ?? DEFAULT_IMAGE_MODEL;
-    const generated = await generateCharacterReferences(prompt, model, await referenceImageDataUrl(current.referenceImage));
+    const styleId = req.body?.styleId === undefined ? current.styleId : validateCharacterStyleId(req.body.styleId);
+    const generated = await generateCharacterReferences(characterImagePrompt(prompt, styleId), model,
+      await referenceImageDataUrl(current.referenceImage));
     staged = generated.directory;
 
     await commitCharacterReferences({
       spritePrompt: prompt,
+      styleId,
+      referenceStyleId: styleId,
       spriteModel: model,
       sprite: generated.referenceViews.side,
       referenceViews: generated.referenceViews,
@@ -404,6 +410,7 @@ app.post("/api/sprites/animate", requireKey, async (req, res) => {
 
     const video = await generateSpriteMotionVideo(imageInput, text, duration, model,
       { startImage: startInput, endImage: endImage ? await readImage(endImage.path) : undefined,
+        stylePrompt: characterStyle(current.referenceStyleId)?.motionPrompt,
         ...(!startImage && !endImage && model === "minimax/hailuo-3-max" ? { characterPrompt: current.spritePrompt } : {}) });
     const prefix = animationPath(current.activeAnimationId, `runs/${crypto.randomUUID()}`);
     const videoAbs = path.join(activeSpriteDir(), prefix, PROJECT_FILES.source);

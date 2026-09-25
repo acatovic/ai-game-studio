@@ -28,6 +28,8 @@ test('named character and animation directories, renames, empty projects, and le
     assert.equal(view.project.sprites[0].path, 'sprites/scientist-male/sprite.json');
     assert.deepEqual(view.animations, []);
     assert.equal(view.activeAnimationId, '');
+    assert.equal(view.styleId, null);
+    assert.equal(view.referenceStyleId, null);
     await within('scientist-male', undefined, async () => {
       await writeFile(f.spriteFile('scientist-male.png'), png);
       await p.updateSprite({ sprite: 'scientist-male.png', spritePrompt: 'scientist', spriteModel: 'openai/gpt-image-2.5-sunburst' });
@@ -144,6 +146,8 @@ test('named character and animation directories, renames, empty projects, and le
     assert.equal(migrated.project.activeSpriteId, 'scientist-male');
     assert.equal(migrated.activeAnimationId, 'idle');
     assert.equal(migrated.motionPrompt, 'rest');
+    assert.equal(migrated.styleId, null);
+    assert.equal(migrated.referenceStyleId, null);
     assert.equal(migrated.frames[0], '/projects/legacy/sprites/scientist-male/animations/idle/frames/a.png');
     assert.equal(await readFile(path.join(legacyRoot, 'sprites/scientist-male/animations/idle/idle.aseprite'), 'utf8'), 'preserved aseprite');
     await assert.rejects(stat(legacyDir), { code: 'ENOENT' });

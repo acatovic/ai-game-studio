@@ -120,6 +120,8 @@ test("reference attachments persist per character and guide creation without ove
       assert.match(body.prompt, /sole visual reference for identity and style/);
     }
     assert.equal(generated.view.spritePrompt, draft.spritePrompt);
+    assert.equal(generated.view.styleId, null);
+    assert.equal(generated.view.referenceStyleId, null);
     assert.equal((await post("/api/sprites/generate", { prompt: "fail-reference" })).status, 400);
     assert.deepEqual((await current()).referenceViews, generated.view.referenceViews);
     assert.equal((await current()).referenceImage.name, input.name);
