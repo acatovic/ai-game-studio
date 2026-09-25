@@ -173,7 +173,8 @@ button {
   color: var(--text-muted);
 }
 
-.load-menu__delete {
+.load-menu__delete,
+.load-menu__export {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -184,6 +185,12 @@ button {
   color: var(--text-subtle);
   cursor: pointer;
 }
+
+.load-menu__export {
+  flex: 0 0 28px;
+}
+
+.load-menu__export:hover { background: var(--primary-soft); color: var(--primary); }
 
 .load-menu__delete:hover {
   background: #fee2e2;
@@ -957,7 +964,7 @@ button {
 .welcome__eyebrow { color: var(--primary); font-weight: 600; font-size: 14px; }
 .welcome h1 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -0.035em; line-height: 1.2; margin: 18px 0 12px; }
 .welcome p { color: var(--text-muted); margin: 0 0 30px; font-size: 15px; }
-.welcome__actions { display: flex; justify-content: center; gap: 14px; }
+.welcome__actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px; }
 .welcome__actions .btn { min-width: 170px; padding: 18px 24px; font-size: 16px; border-radius: 12px; }
 .welcome__projects { text-align: left; margin: 24px auto 0; max-width: 390px; max-height: 300px; overflow-y: auto; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px; box-shadow: var(--shadow-sm); }
 @media (max-width: 420px) { .welcome__actions { flex-direction: column; } }
@@ -973,6 +980,8 @@ button {
 .name-dialog p { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
 .name-dialog input { width: 100%; margin-top: 8px; }
 .name-dialog__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.import-conflict-dialog .name-dialog__actions { flex-wrap: wrap; }
+.import-conflict-dialog p { font-size: 14px; color: var(--text); }
 .delete-dialog p { color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
 .btn--danger { background: var(--danger); color: white; }
 .btn--danger:hover:not(:disabled) { background: #b91c1c; }

@@ -20,6 +20,20 @@ export const downloadIcon = `
 </svg>
 `;
 
+export const importIcon = `
+<svg class="btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path d="M14 7V5.7A2.7 2.7 0 0 0 11.3 3H5.7A2.7 2.7 0 0 0 3 5.7v8.6A2.7 2.7 0 0 0 5.7 17h5.6a2.7 2.7 0 0 0 2.7-2.7V13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M8.7 10 11.8 7.5v1.6H17v1.8h-5.2v1.6L8.7 10Z" fill="currentColor"/>
+</svg>
+`;
+
+export const exportIcon = `
+<svg class="btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path d="M13 7.6V5.7A2.7 2.7 0 0 0 10.3 3H5.7A2.7 2.7 0 0 0 3 5.7v8.6A2.7 2.7 0 0 0 5.7 17h4.6a2.7 2.7 0 0 0 2.7-2.7v-1.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="m17.5 10-3.1-2.8v1.9H6.6v1.8h7.8v1.9l3.1-2.8Z" fill="currentColor"/>
+</svg>
+`;
+
 export const plusIcon = `
 <svg class="btn__icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
   <path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>

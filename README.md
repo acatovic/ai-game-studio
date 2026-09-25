@@ -26,7 +26,7 @@ Turn your character into an animation, choose the frames to include, and save sp
 
 ## Setup and run
 
-Requires Node.js 20+ and `ffmpeg` on your PATH.
+Requires Node.js 20+, `ffmpeg`, and `zip` on your PATH.
 
 ```bash
 npm install
@@ -53,6 +53,8 @@ Choose **New Project** or **Open** on startup. Projects live outside the reposit
 ```
 
 Generated assets save automatically. **Save project**, switching assets, and **Close project** persist drafts. Each asset's JSON manifest points to its current files; older generated revisions are retained.
+
+Use **Export** in the project header or beside a saved project in **Open** to download the entire project as a ZIP, including manifests and generated assets. Use **Import** on the start screen or in the header to add an exported project from your computer. Import checks the archive and referenced files before placing it in the storage directory. If a project with the same name exists, choose **Replace project**, **Rename import**, or **Cancel**. Replace deletes the existing project's files after the ZIP passes validation.
 
 ## Guides
 
