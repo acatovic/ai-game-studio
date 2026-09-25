@@ -7,7 +7,10 @@ import {
   deleteProject,
   deleteSprite,
   deleteAnimation,
+  exportProject,
   generateSprite,
+  importProject,
+  ProjectImportConflict,
   setReferenceImage,
   setActiveProject,
   getImageModels,
@@ -164,6 +167,12 @@ export function mountApp(root: HTMLElement) {
   const projectLabel = root.querySelector<HTMLSpanElement>("#project-label")!;
   const newBtn = root.querySelector<HTMLButtonElement>("#btn-new-project")!;
   const saveBtn = root.querySelector<HTMLButtonElement>("#btn-save-project")!;
+  const exportBtn = root.querySelector<HTMLButtonElement>("#btn-export-project")!;
+  const importInput = root.querySelector<HTMLInputElement>("#project-import-input")!;
+  const importButtons = [
+    root.querySelector<HTMLButtonElement>("#home-import")!,
+    root.querySelector<HTMLButtonElement>("#btn-import-project")!,
+  ];
   const loadBtn = root.querySelector<HTMLButtonElement>("#btn-load-project")!;
   const loadMenu = root.querySelector<HTMLDivElement>("#load-menu")!;
 
@@ -174,6 +183,46 @@ export function mountApp(root: HTMLElement) {
   const homeOpen = root.querySelector<HTMLButtonElement>("#home-open")!;
   const closeBtn = root.querySelector<HTMLButtonElement>("#btn-close-project")!;
   homeNew.addEventListener("click", () => newBtn.click());
+  for (const button of importButtons) button.addEventListener("click", () => importInput.click());
+  importInput.addEventListener("change", async () => {
+    const file = importInput.files?.[0];
+    importInput.value = "";
+    if (!file) return;
+    store.set({ navigating: true });
+    try {
+      await persistBeforeNavigation();
+      const copyName = (name: string) => `${name.slice(0, 35)}-copy`;
+      let renameTo: string | undefined;
+      let name: string;
+      while (true) {
+        try {
+          ({ name } = await importProject(file, { renameTo }));
+          break;
+        } catch (err) {
+          if (!(err instanceof ProjectImportConflict)) throw err;
+          if (renameTo) {
+            const next = await askName(`'${err.existingName}' already exists. Import as`, copyName(err.existingName), 40);
+            if (!next) return;
+            renameTo = next;
+            continue;
+          }
+          const choice = await chooseImportConflict(err.existingName);
+          if (choice === "cancel") return;
+          if (choice === "replace") {
+            ({ name } = await importProject(file, { replace: true }));
+            break;
+          }
+          const next = await askName("Import project as", copyName(err.existingName), 40);
+          if (!next) return;
+          renameTo = next;
+        }
+      }
+      await applyView(await loadProject(name));
+      store.set({ savedProjects: await listProjects() });
+      toast(`Imported '${name}'`);
+    } catch (err) { toast(err instanceof Error ? err.message : "Import failed"); }
+    finally { store.set({ navigating: false }); }
+  });
   homeOpen.addEventListener("click", async () => {
     homeProjects.hidden = !homeProjects.hidden;
     if (!homeProjects.hidden) {
@@ -376,6 +425,17 @@ export function mountApp(root: HTMLElement) {
     } finally { store.set({ navigating: false }); }
   });
 
+  exportBtn.addEventListener("click", async () => {
+    const name = store.get().currentProjectName;
+    store.set({ navigating: true });
+    try {
+      await persistDraft();
+      await exportProject(name);
+      toast(`Exported '${name}'`);
+    } catch (err) { toast(err instanceof Error ? err.message : "Export failed"); }
+    finally { store.set({ navigating: false }); }
+  });
+
   loadBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     const open = loadMenu.classList.toggle("is-open");
@@ -399,6 +459,20 @@ export function mountApp(root: HTMLElement) {
     const target = e.target as HTMLElement;
     const item = target.closest<HTMLElement>("[data-load-name]");
     const del = target.closest<HTMLElement>("[data-delete-name]");
+    const exportItem = target.closest<HTMLElement>("[data-export-name]");
+
+    if (exportItem) {
+      e.stopPropagation();
+      const name = exportItem.dataset.exportName!;
+      store.set({ navigating: true });
+      try {
+        if (store.get().currentProjectName === name) await persistDraft();
+        await exportProject(name);
+        toast(`Exported '${name}'`);
+      } catch (err) { toast(err instanceof Error ? err.message : "Export failed"); }
+      finally { store.set({ navigating: false }); }
+      return;
+    }
 
     if (del) {
       e.stopPropagation();
@@ -590,7 +664,8 @@ export function mountApp(root: HTMLElement) {
     root.querySelector<HTMLElement>("#music-workspace")!.hidden = workspace !== "music";
     welcome.hidden = !!state.project;
     editor.hidden = !state.project;
-    for (const button of [homeNew, homeOpen, closeBtn, newBtn, saveBtn, loadBtn, addSpriteBtn, renameSpriteBtn, addAnimationBtn, renameAnimationBtn]) button.disabled = busy;
+    for (const button of [homeNew, homeOpen, closeBtn, newBtn, saveBtn, exportBtn, loadBtn, ...importButtons,
+      addSpriteBtn, renameSpriteBtn, addAnimationBtn, renameAnimationBtn]) button.disabled = busy;
     const hasCharacter = !!state.project?.activeSpriteId;
     const hasAnimation = !!state.activeAnimationId;
     root.querySelector<HTMLElement>("#sprites-workspace")!.classList.toggle("sprites-workspace--smooth",
@@ -842,6 +917,7 @@ function renderLoadMenu(projects: { name: string; updatedAt: string }[]): string
             <span class="load-menu__name">${escapeHtml(p.name)}</span>
             <span class="load-menu__time">${escapeHtml(when)}</span>
           </button>
+          <button class="load-menu__export" data-export-name="${escapeAttr(p.name)}" title="Export ZIP" aria-label="Export ${escapeAttr(p.name)} as ZIP">ZIP</button>
           <button class="load-menu__delete" data-delete-name="${escapeAttr(p.name)}" title="Delete">${trashIcon}</button>
         </div>
       `;
@@ -865,6 +941,7 @@ function escapeAttr(s: string): string {
 
 function renderShell(): string {
   return `
+    <input id="project-import-input" type="file" accept=".zip,application/zip" hidden />
     <section id="welcome" class="welcome">
       <div class="welcome__content">
         <span class="welcome__eyebrow">Wombo - AI Game Studio</span>
@@ -873,6 +950,7 @@ function renderShell(): string {
         <div class="welcome__actions">
           <button id="home-new" class="btn btn--primary" type="button">${plusIcon} New Project</button>
           <button id="home-open" class="btn btn--secondary" type="button">${folderIcon} Open</button>
+          <button id="home-import" class="btn btn--secondary" type="button">Import ZIP</button>
         </div>
         <div id="home-projects" class="welcome__projects" aria-label="Saved projects" hidden></div>
       </div>
@@ -906,6 +984,8 @@ function renderShell(): string {
             ${saveIcon}
             Save project
           </button>
+          <button id="btn-export-project" class="btn btn--secondary btn--sm" type="button">Export ZIP</button>
+          <button id="btn-import-project" class="btn btn--secondary btn--sm" type="button">Import ZIP</button>
           <button id="btn-close-project" class="btn btn--secondary btn--sm" type="button">Close project</button>
         </div>
       </header>
@@ -1095,6 +1175,31 @@ function createToast(root: HTMLElement) {
     if (timer) window.clearTimeout(timer);
     timer = window.setTimeout(() => el.classList.remove("is-visible"), 2200);
   };
+}
+
+function chooseImportConflict(name: string): Promise<"replace" | "rename" | "cancel"> {
+  const dialog = document.createElement("dialog");
+  dialog.className = "name-dialog import-conflict-dialog";
+  dialog.setAttribute("aria-labelledby", "import-conflict-title");
+  dialog.setAttribute("aria-describedby", "import-conflict-warning");
+  dialog.innerHTML = `<form method="dialog">
+    <h2 id="import-conflict-title">Project already exists</h2>
+    <p id="import-conflict-warning">A project named <strong>${escapeHtml(name)}</strong> already exists. Replacing it permanently deletes its current local files and imports the ZIP in its place.</p>
+    <div class="name-dialog__actions">
+      <button class="btn btn--secondary" value="cancel" autofocus>Cancel</button>
+      <button class="btn btn--secondary" value="rename">Rename import</button>
+      <button class="btn btn--danger" value="replace">Replace project</button>
+    </div>
+  </form>`;
+  document.body.appendChild(dialog);
+  return new Promise(resolve => {
+    dialog.addEventListener("close", () => {
+      const value = dialog.returnValue;
+      dialog.remove();
+      resolve(value === "replace" || value === "rename" ? value : "cancel");
+    }, { once: true });
+    dialog.showModal();
+  });
 }
 
 function askName(title: string, initial = "", maxLength = 60): Promise<string | null> {

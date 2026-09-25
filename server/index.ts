@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { validatePrompt } from "./validation.js";
+import { createProjectArchive, receiveProjectArchive, importProjectArchive, removeArchive, ProjectImportConflict } from "./project-archive.js";
 import { initializeStorage } from "./storage.js";
 await initializeStorage();
 import express, { type Request, type Response, type NextFunction } from "express";
@@ -69,10 +70,13 @@ const app = express();
 app.use(express.json({ limit: "50mb" }));
 let mutating = false;
 app.use("/api", (req, res, next) => {
-  if (req.method !== "POST") return next();
+  if (req.method !== "POST" && !(req.method === "GET" && req.path.startsWith("/projects/export/"))) return next();
   if (mutating) { res.status(409).json({ error: "Another operation is in progress. Please try again." }); return; }
   mutating = true;
-  res.once("finish", () => { mutating = false; });
+  let released = false;
+  const release = () => { if (!released) { released = true; mutating = false; } };
+  res.once("finish", release);
+  res.once("close", release);
   next();
 });
 app.use("/api", (req, res, next) => {
@@ -200,6 +204,42 @@ app.get("/api/projects", async (_req, res) => {
   } catch (err) {
     handleError(err, res);
   }
+});
+
+app.get("/api/projects/export/:name", async (req, res) => {
+  let archive: string | undefined;
+  try {
+    const name = safeProjectName(req.params.name);
+    archive = await createProjectArchive(name);
+    const output = archive;
+    res.download(output, `${name}.zip`, error => {
+      void removeArchive(output);
+      if (error && !res.headersSent) handleError(error, res);
+    });
+  } catch (err) {
+    if (archive) await removeArchive(archive);
+    handleError(err, res);
+  }
+});
+
+app.post("/api/projects/import", async (req, res) => {
+  let archive: string | undefined;
+  try {
+    if (req.get("Content-Type") !== "application/zip") throw new Error("Select a ZIP project archive");
+    const renameTo = req.get("X-Import-Name");
+    const mode = req.get("X-Import-Mode");
+    if (mode && mode !== "replace") throw new Error("Invalid import mode");
+    if (renameTo) safeProjectName(renameTo);
+    if (renameTo && mode === "replace") throw new Error("Choose either a new name or replace");
+    archive = await receiveProjectArchive(req);
+    const name = await importProjectArchive(archive, { renameTo, replace: mode === "replace" });
+    res.json({ name });
+  } catch (err) {
+    if (err instanceof ProjectImportConflict) {
+      res.status(409).json({ error: err.message, existingName: err.existingName });
+    } else handleError(err, res);
+  }
+  finally { if (archive) await removeArchive(archive); }
 });
 
 app.post("/api/projects/save", async (_req, res) => {

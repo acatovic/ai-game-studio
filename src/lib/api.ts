@@ -136,6 +136,44 @@ export function listProjects(): Promise<ProjectSummary[]> {
   return getJson("/api/projects");
 }
 
+export async function exportProject(name: string): Promise<void> {
+  const res = await fetch(`/api/projects/export/${encodeURIComponent(name)}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Export failed (${res.status})`);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  try {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${name}.zip`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+  } finally { setTimeout(() => URL.revokeObjectURL(url), 60_000); }
+}
+
+export class ProjectImportConflict extends Error {
+  constructor(readonly existingName: string) {
+    super(`A project named '${existingName}' already exists`);
+  }
+}
+
+export async function importProject(file: File, options: { renameTo?: string; replace?: boolean } = {}): Promise<{ name: string }> {
+  const res = await fetch("/api/projects/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/zip",
+      ...(options.renameTo ? { "X-Import-Name": options.renameTo } : {}),
+      ...(options.replace ? { "X-Import-Mode": "replace" } : {}) },
+    body: file,
+  });
+  const json = await res.json().catch(() => ({})) as { name?: string; error?: string; existingName?: string };
+  if (res.status === 409 && json.existingName) throw new ProjectImportConflict(json.existingName);
+  if (!res.ok) throw new Error(json.error ?? `Import failed (${res.status})`);
+  if (!json.name) throw new Error("Import did not return a project name");
+  return { name: json.name };
+}
+
 export function saveProject(): Promise<ProjectView> {
   return postJson("/api/projects/save", {});
 }
