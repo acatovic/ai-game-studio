@@ -7,6 +7,7 @@ import { DEFAULT_IMAGE_MODEL } from "./image.js";
 import type { SavedReferenceImage } from "./reference-image.js";
 import type { ReferenceImageAttachment } from "../src/lib/reference-image.js";
 import { DEFAULT_FRAME_SIZE, type FrameSize } from "../src/lib/frame-size.js";
+import { isCharacterStyleId, type CharacterStyleId } from "../src/lib/character-styles.js";
 import { createHash, randomUUID } from "node:crypto";
 import { REFERENCE_VIEWS, REFERENCE_LABELS, sourceKey, type ReferenceView, type ImageSource,
   type ImageSourceOption } from "../src/lib/character.js";
@@ -49,6 +50,8 @@ interface CharacterManifest {
   version: 2;
   name: string;
   spritePrompt: string;
+  styleId?: CharacterStyleId | null;
+  referenceStyleId?: CharacterStyleId | null;
   spriteModel: string;
   sprite: string | null;
   spriteDimensions: { w: number; h: number } | null;
@@ -74,6 +77,8 @@ export interface ProjectManifest {
   aseprite: string | null;
   name: string;
   spritePrompt: string;
+  styleId: CharacterStyleId | null;
+  referenceStyleId: CharacterStyleId | null;
   spriteModel: string;
   motionPrompt: string;
   motionModel: string;
@@ -102,6 +107,8 @@ export interface ProjectView {
   asepriteUrl: string | null;
   name: string;
   spritePrompt: string;
+  styleId: CharacterStyleId | null;
+  referenceStyleId: CharacterStyleId | null;
   spriteModel: string;
   motionPrompt: string;
   motionModel: string;
@@ -126,6 +133,8 @@ export function emptyManifest(name: string): ProjectManifest {
     animations: [],
     aseprite: null,
     spritePrompt: "",
+    styleId: null,
+    referenceStyleId: null,
     spriteModel: DEFAULT_IMAGE_MODEL,
     motionPrompt: "",
     motionModel: "x-ai/grok-imagine-video",
@@ -228,7 +237,8 @@ async function characterManifest(): Promise<CharacterManifest> {
     if (source !== spriteFile(reference)) await copyFile(source, spriteFile(reference));
   }
   const character: CharacterManifest = {
-    version: 2, name: doc.name, spritePrompt: legacy.spritePrompt, spriteModel: legacy.spriteModel,
+    version: 2, name: doc.name, spritePrompt: legacy.spritePrompt, styleId: legacy.styleId ?? null,
+    referenceStyleId: legacy.referenceStyleId ?? null, spriteModel: legacy.spriteModel,
     sprite: reference, spriteDimensions: legacy.spriteDimensions, activeAnimationId: id,
     animations: [{ id, name: animation.name }], updatedAt: legacy.updatedAt,
   };
@@ -261,10 +271,14 @@ export async function readManifest(): Promise<ProjectManifest> {
   const references = { referenceViews, referenceAlignment: character.referenceAlignment ?? null, imageSources };
   const id = context.animationId ?? character.activeAnimationId;
   if (!id && !character.animations.length) return { ...emptyManifest(doc.name), ...character, ...references,
+    styleId: isCharacterStyleId(character.styleId) ? character.styleId : null,
+    referenceStyleId: isCharacterStyleId(character.referenceStyleId) ? character.referenceStyleId : null,
     project: { ...doc, activeSpriteId: context.spriteId } };
   if (!character.animations.some(a => a.id === id)) throw new Error("Animation not found");
   const animation = JSON.parse(await readFile(spriteFile(animationPath(id, "animation.json")), "utf8")) as AnimationManifest;
   return { ...emptyManifest(doc.name), ...character, ...animation, ...references, name: doc.name, activeAnimationId: id,
+    styleId: isCharacterStyleId(character.styleId) ? character.styleId : null,
+    referenceStyleId: isCharacterStyleId(character.referenceStyleId) ? character.referenceStyleId : null,
     frameSize: animation.frameSize ?? DEFAULT_FRAME_SIZE,
     spritesheetFrameSize: animation.spritesheet ? animation.spritesheetFrameSize ?? DEFAULT_FRAME_SIZE : null,
     spriteModel: character.spriteModel === "openai/gpt-image-2.5-sunburst" ? DEFAULT_IMAGE_MODEL : character.spriteModel,
@@ -275,7 +289,7 @@ export async function updateSprite(patch: Partial<ProjectManifest>): Promise<Pro
   const current = await readManifest();
   const updated = { ...current, ...patch, updatedAt: new Date().toISOString() };
   const character = await characterManifest();
-  for (const key of ["spritePrompt", "spriteModel", "sprite", "spriteDimensions", "referenceViews", "referenceAlignment"] as const) {
+  for (const key of ["spritePrompt", "styleId", "referenceStyleId", "spriteModel", "sprite", "spriteDimensions", "referenceViews", "referenceAlignment"] as const) {
     Object.assign(character, { [key]: updated[key] });
   }
   character.activeAnimationId = current.activeAnimationId;
@@ -295,7 +309,7 @@ export async function updateSprite(patch: Partial<ProjectManifest>): Promise<Pro
 }
 
 export async function commitCharacterReferences(patch: Pick<ProjectManifest,
-  "spritePrompt" | "spriteModel" | "sprite" | "spriteDimensions" | "referenceViews" | "referenceAlignment">): Promise<void> {
+  "spritePrompt" | "styleId" | "referenceStyleId" | "spriteModel" | "sprite" | "spriteDimensions" | "referenceViews" | "referenceAlignment">): Promise<void> {
   const character = await characterManifest();
   await writeJson(spriteFile(PROJECT_FILES.manifest), { ...character, ...patch, updatedAt: new Date().toISOString() });
 }
@@ -357,7 +371,8 @@ export function toView(m: ProjectManifest): ProjectView {
     startImage: endpointView(m.startImage),
     endImage: endpointView(m.endImage),
     imageSources: m.imageSources.map(option => ({ ...option, url: base + option.url })),
-    asepriteUrl: m.aseprite ? base + m.aseprite : null, spritePrompt: m.spritePrompt, spriteModel: m.spriteModel,
+    asepriteUrl: m.aseprite ? base + m.aseprite : null, spritePrompt: m.spritePrompt,
+    styleId: m.styleId, referenceStyleId: m.referenceStyleId, spriteModel: m.spriteModel,
     motionPrompt: m.motionPrompt, motionModel: m.motionModel,
     spriteUrl: m.sprite ? base + m.sprite : null, spriteDimensions: m.spriteDimensions,
     frames: m.frames.map(f => base + f), selectedFrameIndices: m.selectedFrameIndices,
@@ -595,7 +610,8 @@ export async function changeSprite(action: "new" | "load" | "rename", value: str
     ensureInsideRoot(dir);
     await mkdir(path.dirname(dir), { recursive: true });
     await mkdir(dir);
-    const character: CharacterManifest = { version: 2, name: doc.name, spritePrompt: "", spriteModel: DEFAULT_IMAGE_MODEL,
+    const character: CharacterManifest = { version: 2, name: doc.name, spritePrompt: "", styleId: null,
+      referenceStyleId: null, spriteModel: DEFAULT_IMAGE_MODEL,
       sprite: null, spriteDimensions: null, activeAnimationId: "", animations: [], updatedAt: new Date().toISOString() };
     await writeJson(path.join(dir, "sprite.json"), character);
     doc.sprites.push({ id: value, name: value, path: `sprites/${value}/sprite.json` });

@@ -37,7 +37,7 @@ const CHROMA_DIRECTIVE =
   "hex #00b140, throughout the entire clip. No background changes, no " +
   "environmental elements, no shadows on the background, no camera movement. " +
   "The subject animates against the uniform green backdrop. " +
-  "Preserve the reference character's exact design, proportions, colors and pixel-art style. " +
+  "Preserve the character's exact design, proportions, colors and rendering style. " +
   "Keep the full character visible with consistent scale and framing. " +
   "Perform only the requested movement; do not add motion or morph the character.";
 
@@ -72,7 +72,7 @@ export async function generateSpriteMotionVideo(
   text: string,
   duration = 2,
   model: VideoModelId = DEFAULT_VIDEO_MODEL,
-  endpoints: { startImage?: string; endImage?: string; characterPrompt?: string } = {},
+  endpoints: { startImage?: string; endImage?: string; characterPrompt?: string; stylePrompt?: string } = {},
 ): Promise<VideoDownload> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
@@ -88,7 +88,7 @@ export async function generateSpriteMotionVideo(
       "Finish in the exact ending pose; this is a transition, not a repeating cycle."
     : "Create a seamless cycle with matching starting and ending poses.";
   const characterDescription = endpoints.characterPrompt?.trim();
-  const fullText = `${characterDescription ? `Character: ${characterDescription}\n\nMovement: ` : ""}${text.trim()}\n\n${CHROMA_DIRECTIVE}\n${transition}`;
+  const fullText = `${characterDescription ? `Character: ${characterDescription}\n\nMovement: ` : ""}${text.trim()}\n\n${CHROMA_DIRECTIVE}${endpoints.stylePrompt ? `\nArt style: ${endpoints.stylePrompt}` : ""}\n${transition}`;
   const frameImages = [];
   if (endpoints.startImage) {
     frameImages.push({ type: "image_url", image_url: { url: await prepareVideoReference(endpoints.startImage, 1024) },

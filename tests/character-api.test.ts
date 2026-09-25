@@ -35,15 +35,21 @@ test("aligned references and saved endpoint poses survive generations, edits, re
       return json;
     };
     const bytes = async (url: string) => Buffer.from(await (await fetch(base + url)).arrayBuffer());
-    const draft = { spritePrompt: "red hero", spriteModel: "openai/gpt-image-2.5-flare", motionPrompt: "turn north",
+    const draft = { spritePrompt: "red hero", styleId: "cel-shaded", spriteModel: "openai/gpt-image-2.5-flare", motionPrompt: "turn north",
       motionModel: "minimax/hailuo-3" };
     await ok("/api/projects/new", { name: "demo" });
     headers["X-Project-Name"] = "demo";
     await ok("/api/projects/sprites/new", { value: "hero" });
     headers["X-Sprite-Id"] = "hero";
+    assert.equal((await ok("/api/projects/draft", draft)).styleId, "cel-shaded");
+    const invalidStyle = await post("/api/sprites/generate", { prompt: "red hero", styleId: "unknown-style" });
+    assert.equal(invalidStyle.status, 400);
+    assert.match((await invalidStyle.json()).error, /Unsupported character art style/);
     let response = await post("/api/sprites/generate", { prompt: "red hero" });
     assert.equal(response.status, 200);
     const reference = (await response.json()).view as ProjectView;
+    assert.equal(reference.styleId, "cel-shaded");
+    assert.equal(reference.referenceStyleId, "cel-shaded");
     assert.deepEqual(Object.keys(reference.referenceViews), ["side", "front", "back"]);
     assert.deepEqual(reference.spriteDimensions, { w: 1024, h: 1024 });
     assert.equal(reference.referenceAlignment?.height, 820);
@@ -51,6 +57,9 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     const recorded = (await readFile(requestsFile, "utf8")).trim().split("\n").map(line => JSON.parse(line));
     assert.equal(recorded.length, 3);
     assert.match(recorded[0].body.prompt, /facing RIGHT/);
+    assert.match(recorded[0].body.prompt, /hard-edged cel-shading tones/);
+    assert.doesNotMatch(recorded[0].body.prompt, /Extremely low-resolution 8-bit/);
+    assert.match(recorded[1].body.prompt, /hard-edged cel-shading tones/);
     assert.equal(recorded[1].body.input_references[0].image_url.url, recorded[2].body.input_references[0].image_url.url);
     assert.match(recorded[1].body.prompt, /Strict FRONT/);
     assert.match(recorded[2].body.prompt, /Strict BACK/);
@@ -59,6 +68,9 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     headers["X-Animation-Id"] = "idle-side";
     const idle = await ok("/api/sprites/animate", { text: "idle", model: "x-ai/grok-imagine-video" });
     assert.ok(idle.frames.length >= 4);
+    const idleCalls = (await readFile(requestsFile, "utf8")).trim().split("\n").map(line => JSON.parse(line));
+    assert.match(idleCalls.at(-1).body.prompt, /hard-edged cel-shading tones/);
+    assert.doesNotMatch(idleCalls.at(-1).body.prompt, /pixel-art style/);
     await ok("/api/projects/selection", { selectedIndices: [3, 1] });
     await ok("/api/projects/animations/new", { value: "turn-north" });
     headers["X-Animation-Id"] = "turn-north";
@@ -161,7 +173,11 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     assert.match(renamedCharacter.startImage!.url, /sprites\/knight\//);
     assert.deepEqual(await bytes(renamedCharacter.referenceViews.side!), sideBytes);
     assert.equal(renamedCharacter.spriteUrl, renamedCharacter.referenceViews.side);
+    assert.equal(renamedCharacter.styleId, "cel-shaded");
+    assert.equal(renamedCharacter.referenceStyleId, "cel-shaded");
     const reopened = await ok("/api/projects/load", { name: "demo" });
+    assert.equal(reopened.styleId, "cel-shaded");
+    assert.equal(reopened.referenceStyleId, "cel-shaded");
     assert.deepEqual(reopened.startImage, renamedCharacter.startImage);
     assert.deepEqual(reopened.endImage, renamedCharacter.endImage);
     await ok("/api/projects/draft", { ...draft, startImage: null });
@@ -192,6 +208,23 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     assert.equal(lastRequest.frame_images, undefined);
     assert.equal(lastRequest.input_references, undefined);
     assert.match(lastRequest.prompt, /Character: red hero/);
+    assert.match(lastRequest.prompt, /hard-edged cel-shading tones/);
+    const pendingStyle = await ok("/api/projects/draft", { ...draft, styleId: "storybook-3d",
+      startImage: null, endImage: null });
+    assert.equal(pendingStyle.styleId, "storybook-3d");
+    assert.equal(pendingStyle.referenceStyleId, "cel-shaded");
+    await ok("/api/sprites/animate", { text: "idle", model: "minimax/hailuo-3-max" });
+    lastRequest = JSON.parse((await readFile(requestsFile, "utf8")).trim().split("\n").at(-1)!).body;
+    assert.match(lastRequest.prompt, /hard-edged cel-shading tones/);
+    assert.doesNotMatch(lastRequest.prompt, /rounded sculpted forms/);
+    response = await post("/api/sprites/generate", { prompt: "red hero", styleId: "storybook-3d" });
+    assert.equal(response.status, 200);
+    const restyled = (await response.json()).view as ProjectView;
+    assert.equal(restyled.styleId, "storybook-3d");
+    assert.equal(restyled.referenceStyleId, "storybook-3d");
+    assert.ok(restyled.animations.length > 0, "regenerating references preserves animations");
+    const restyledCalls = (await readFile(requestsFile, "utf8")).trim().split("\n").slice(-3).map(line => JSON.parse(line).body);
+    for (const call of restyledCalls) assert.match(call.prompt, /rounded sculpted forms/);
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       const exited = once(child, "exit"); child.kill(); await exited;

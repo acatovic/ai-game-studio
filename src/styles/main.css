@@ -257,6 +257,78 @@ button {
   color: var(--text);
 }
 
+/* Character style library */
+.style-picker { position: relative; }
+.style-picker__summary {
+  display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 5px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--card); color: var(--text); font-size: 13px; cursor: pointer;
+  list-style: none;
+}
+.style-picker__summary::-webkit-details-marker { display: none; }
+.style-picker__summary::marker { content: ""; }
+.style-picker__summary:hover { border-color: var(--border-strong); }
+.style-picker__summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.style-picker[open] .style-picker__summary { border-color: var(--primary); }
+.style-picker--disabled .style-picker__summary { opacity: .55; cursor: default; }
+.style-picker__sample {
+  width: 24px; height: 24px; flex: none; border-radius: 5px;
+  border: 1px solid rgb(0 0 0 / 9%);
+  background: linear-gradient(135deg, #e5e7eb 50%, #f9fafb 50%);
+}
+.style-picker__art--pixel-8bit, .style-picker__sample--pixel-8bit {
+  --style-image: url("../assets/style-previews/wombo-8bit.png");
+}
+.style-picker__art--cinematic-pixel, .style-picker__sample--cinematic-pixel {
+  --style-image: url("../assets/style-previews/wombo-cinematic-pixel.png");
+}
+.style-picker__art--cel-shaded, .style-picker__sample--cel-shaded {
+  --style-image: url("../assets/style-previews/wombo-cel-2d.png");
+}
+.style-picker__art--storybook-3d, .style-picker__sample--storybook-3d {
+  --style-image: url("../assets/style-previews/wombo-storybook-3d.png");
+}
+.style-picker__sample:not(.style-picker__sample--custom) {
+  background: #f3f6f8 var(--style-image) center -5px / 80px 80px no-repeat;
+}
+.style-picker__sample--pixel-8bit, .style-picker__sample--cinematic-pixel { image-rendering: pixelated; }
+.style-picker__chevron { margin-left: auto; display: flex; color: var(--text-muted); }
+.style-picker[open] .style-picker__chevron { transform: rotate(180deg); }
+.style-picker__options {
+  position: absolute; top: calc(100% + 6px); left: 0; width: 100%; z-index: 30;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+  max-height: min(470px, 70vh); overflow-y: auto;
+  padding: 10px; background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-md);
+}
+.style-picker__option {
+  min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  padding: 5px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--card); color: var(--text); text-align: left; cursor: pointer;
+}
+.style-picker__option:hover, .style-picker__custom:hover { border-color: var(--primary); background: #f8fbff; }
+.style-picker__option[aria-pressed="true"], .style-picker__custom[aria-pressed="true"] { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.style-picker__option:focus-visible, .style-picker__custom:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.style-picker__option:disabled, .style-picker__custom:disabled { cursor: default; opacity: .55; }
+.style-picker__art {
+  height: 104px; display: block; border-radius: 5px;
+  background: #f3f6f8 var(--style-image) center / auto 100% no-repeat;
+}
+.style-picker__art--pixel-8bit, .style-picker__art--cinematic-pixel { image-rendering: pixelated; }
+.style-picker__option-label { font-size: 12px; font-weight: 600; }
+.style-picker__description { font-size: 11px; line-height: 1.3; color: var(--text-muted); }
+.style-picker__custom {
+  grid-column: 1 / -1; padding: 8px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--card); color: var(--text-muted);
+  font-size: 12px; text-align: center; cursor: pointer;
+}
+.style-picker__pending { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.35; }
+.sprites-workspace--smooth .preview__box img,
+.sprites-workspace--smooth .endpoint-preview img,
+.sprites-workspace--smooth .frame-tile img,
+.sprites-workspace--smooth .sheet-preview img,
+.sprites-workspace--smooth .gif-preview img { image-rendering: auto; }
+
 .input,
 .textarea {
   width: 100%;

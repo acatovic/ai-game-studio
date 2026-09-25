@@ -8,6 +8,8 @@ Describe your character and generate aligned side, front and back reference view
 
 Attach an image for visual guidance and describe what to use from it, such as its art style or a specific character. Your text controls the subject and requested changes. Front and back views use the generated side view to keep the new character consistent.
 
+Choose an art style from 8-bit Pixel, Cinematic Pixel, Cel-shaded 2D, or Storybook 3D. The selection is saved per character and carries into animation; Custom lets you describe the style in your own prompt.
+
 ![Creating character reference views in Wombo](ai-game-studio-character-angles.gif)
 
 ## Animation creation

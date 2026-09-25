@@ -6,6 +6,7 @@ import type {
 } from "./api";
 import type { ReferenceView, ImageSourceOption } from "./character";
 import { DEFAULT_FRAME_SIZE, type FrameSize } from "./frame-size";
+import type { CharacterStyleId } from "./character-styles";
 
 export const DEFAULT_IMAGE_MODEL = "openai/gpt-image-2.5-flare";
 export const DEFAULT_VIDEO_MODEL = "x-ai/grok-imagine-video";
@@ -35,6 +36,8 @@ export interface AppState {
   status: AppStatus;
   errorMessage: string | null;
   spritePrompt: string;
+  styleId: CharacterStyleId | null;
+  referenceStyleId: CharacterStyleId | null;
   spriteModel: string;
   imageModels: ImageModelOption[];
   motionPrompt: string;
@@ -67,6 +70,8 @@ export function createInitialState(): AppState {
     status: "idle",
     errorMessage: null,
     spritePrompt: "",
+    styleId: null,
+    referenceStyleId: null,
     spriteModel: DEFAULT_IMAGE_MODEL,
     imageModels: [],
     motionPrompt: "",
@@ -108,6 +113,8 @@ export function hydrateFromView(view: ProjectView): Partial<AppState> {
     animations: view.animations,
     asepriteSrc: cacheBust(view.asepriteUrl, v),
     spritePrompt: view.spritePrompt,
+    styleId: view.styleId ?? null,
+    referenceStyleId: view.referenceStyleId ?? null,
     spriteModel: view.spriteModel || DEFAULT_IMAGE_MODEL,
     motionPrompt: view.motionPrompt,
     motionModel: view.motionModel || DEFAULT_VIDEO_MODEL,

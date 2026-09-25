@@ -6,7 +6,7 @@ Use **Characters & Animations** to create a character, generate its reference vi
 
 1. Choose **New Project** or **Open**. New projects start with no characters.
 2. Select **Characters & Animations**, click **Add character**, and enter a name such as `scientist-male`.
-3. Describe the character's appearance in **Character Prompt** and choose an image model.
+3. Pick an **Art style** from the four presets, or leave **Custom** to describe the style yourself. Describe the character's appearance in **Character Prompt** and choose an image model.
 4. Click **Generate Character**, then review **Side**, **Front**, and **Back**.
 
 For example:
@@ -14,6 +14,10 @@ For example:
 > A pixel-art scientist wearing a white lab coat, dark trousers, brown boots, and round glasses. Full body, neutral standing pose, consistent proportions.
 
 Generation creates a side view facing right, then uses that image to guide the front and back views. All three are aligned on transparent 1024×1024 canvases with a shared character height, horizontal center, and baseline. Wide characters are scaled to fit without clipping. The app reserves chroma green for background removal, so avoid green clothing or accessories.
+
+The art style library offers **8-bit Pixel**, **Cinematic Pixel** (the After Light direction), **Cel-shaded 2D**, and **Storybook 3D**. A preset adds rendering instructions when generating; it does not replace or rewrite the visible character prompt. Each character remembers its selection. Existing characters start on Custom, preserving their original prompts and references.
+
+Changing the selection leaves existing references as they are until you click **Generate Character** again. The picker shows a reminder when a change is pending. Animations follow the style of the saved reference views, and 2D cel-shaded and 3D styles use smooth spritesheet scaling while pixel styles keep crisp nearest-neighbor scaling. A prompt guides the model toward low-resolution pixel art, but does not enforce a fixed pixel grid or exact palette.
 
 Review all views for consistent anatomy and costume details. Regenerating replaces the current reference set together and keeps existing animations and original images. If a view fails generation or alignment, the previous set remains available.
 

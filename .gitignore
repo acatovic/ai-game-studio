@@ -12,3 +12,6 @@ frames/
 *.webm
 
 *.log
+
+# Keep the full-size Wombo sources locally; the app bundles resized previews.
+/wombo-*.png

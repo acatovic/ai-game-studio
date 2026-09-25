@@ -92,7 +92,8 @@ for (const model of ["x-ai/grok-imagine-video", "minimax/hailuo-3", "minimax/hai
         image = body.input_references[0].image_url.url;
       }
       if (image) assert.deepEqual([...decode(image).subarray(0, 4)], [0, 177, 64, 255]);
-      assert.match(body.prompt, /pixel-art style/);
+      assert.match(body.prompt, /rendering style/);
+      assert.doesNotMatch(body.prompt, /pixel-art style/);
       return new Response(JSON.stringify({ id: "test", status: "completed", unsigned_urls: ["https://example.com/video.mp4"] }));
     });
     assert.deepEqual(
