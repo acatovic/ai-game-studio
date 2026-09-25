@@ -619,7 +619,7 @@ export function mountApp(root: HTMLElement) {
     stylePicker.inert = busy || !hasCharacter;
     if (busy) stylePicker.open = false;
     stylePicker.classList.toggle("style-picker--disabled", busy || !hasCharacter);
-    stylePickerLabel.textContent = characterStyle(state.styleId)?.label ?? "Custom · no preset";
+    stylePickerLabel.textContent = characterStyle(state.styleId)?.label ?? "Custom";
     stylePickerSample.className = `style-picker__sample style-picker__sample--${state.styleId ?? "custom"}`;
     stylePendingHint.hidden = !state.spriteSrc || state.styleId === state.referenceStyleId;
     for (const option of styleOptions.querySelectorAll<HTMLButtonElement>("[data-character-style]")) {
@@ -867,7 +867,7 @@ function renderShell(): string {
   return `
     <section id="welcome" class="welcome">
       <div class="welcome__content">
-        <span class="welcome__eyebrow">AI Game Studio</span>
+        <span class="welcome__eyebrow">Wombo - AI Game Studio</span>
         <h1>Bring your next game to life.</h1>
         <p>Create a project to keep your characters, animations and sounds together.</p>
         <div class="welcome__actions">
@@ -885,7 +885,7 @@ function renderShell(): string {
             <span></span><span></span><span></span>
             <span></span><span></span><span></span>
           </span>
-          <span class="app-header__title">AI Game Studio</span>
+          <span class="app-header__title">Wombo - AI Game Studio</span>
           <span class="app-header__project">· <span id="project-label"></span></span>
         </div>
 
@@ -933,16 +933,14 @@ function renderShell(): string {
               <details id="character-style-picker" class="style-picker">
                 <summary class="style-picker__summary" aria-labelledby="art-style-field-label character-style-label">
                   <span id="character-style-sample" class="style-picker__sample style-picker__sample--custom" aria-hidden="true"></span>
-                  <span id="character-style-label">Custom · no preset</span>
+                  <span id="character-style-label">Custom</span>
                   <span class="style-picker__chevron" aria-hidden="true">${chevronIcon}</span>
                 </summary>
                 <div id="character-style-options" class="style-picker__options" role="group" aria-label="Character art styles">
                   ${CHARACTER_STYLES.map(style => `
                     <button class="style-picker__option" type="button" data-character-style="${style.id}"
                       aria-label="${escapeAttr(style.label)}: ${escapeAttr(style.description)}" aria-pressed="false">
-                      <span class="style-picker__art style-picker__art--${style.id}" aria-hidden="true">
-                        <span class="style-picker__figure"><span class="style-picker__head"></span><span class="style-picker__body"></span></span>
-                      </span>
+                      <span class="style-picker__art style-picker__art--${style.id}" aria-hidden="true"></span>
                       <span class="style-picker__option-label">${style.label}</span>
                       <span class="style-picker__description">${style.description}</span>
                     </button>`).join("")}

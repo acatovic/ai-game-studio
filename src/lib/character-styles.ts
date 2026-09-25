@@ -11,7 +11,7 @@ export const CHARACTER_STYLES = [
     id: "cinematic-pixel",
     label: "Cinematic Pixel",
     rendering: "pixel",
-    description: "After Light-style atmospheric 2.5D pixel art.",
+    description: "Perfect for atmospheric 2.5D pixel art.",
     imagePrompt: "Cinematic, high-detail pixel art for a moody 2.5D game. Use intentional pixel clusters, a strong readable silhouette, nuanced but discrete color ramps, rich shadow shapes, and restrained dramatic highlights. Give the character a grounded, atmospheric look without blurring the pixels. Keep environmental lighting effects, bloom, and depth of field out of the isolated sprite.",
     motionPrompt: "Preserve the detailed pixel clusters, discrete color ramps, dramatic shadow shapes, and crisp pixel edges across the animation. Do not blur or smooth the sprite.",
   },
