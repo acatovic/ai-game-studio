@@ -39,6 +39,8 @@ import {
   folderIcon,
   frameIcon,
   gridIcon,
+  importIcon,
+  exportIcon,
   plusIcon,
   saveIcon,
   sparkleIcon,
@@ -917,7 +919,7 @@ function renderLoadMenu(projects: { name: string; updatedAt: string }[]): string
             <span class="load-menu__name">${escapeHtml(p.name)}</span>
             <span class="load-menu__time">${escapeHtml(when)}</span>
           </button>
-          <button class="load-menu__export" data-export-name="${escapeAttr(p.name)}" title="Export ZIP" aria-label="Export ${escapeAttr(p.name)} as ZIP">ZIP</button>
+          <button class="load-menu__export" data-export-name="${escapeAttr(p.name)}" title="Export project" aria-label="Export ${escapeAttr(p.name)}">${exportIcon}</button>
           <button class="load-menu__delete" data-delete-name="${escapeAttr(p.name)}" title="Delete">${trashIcon}</button>
         </div>
       `;
@@ -950,7 +952,7 @@ function renderShell(): string {
         <div class="welcome__actions">
           <button id="home-new" class="btn btn--primary" type="button">${plusIcon} New Project</button>
           <button id="home-open" class="btn btn--secondary" type="button">${folderIcon} Open</button>
-          <button id="home-import" class="btn btn--secondary" type="button">Import ZIP</button>
+          <button id="home-import" class="btn btn--secondary" type="button">${importIcon} Import</button>
         </div>
         <div id="home-projects" class="welcome__projects" aria-label="Saved projects" hidden></div>
       </div>
@@ -984,8 +986,8 @@ function renderShell(): string {
             ${saveIcon}
             Save project
           </button>
-          <button id="btn-export-project" class="btn btn--secondary btn--sm" type="button">Export ZIP</button>
-          <button id="btn-import-project" class="btn btn--secondary btn--sm" type="button">Import ZIP</button>
+          <button id="btn-export-project" class="btn btn--secondary btn--sm" type="button">${exportIcon} Export</button>
+          <button id="btn-import-project" class="btn btn--secondary btn--sm" type="button">${importIcon} Import</button>
           <button id="btn-close-project" class="btn btn--secondary btn--sm" type="button">Close project</button>
         </div>
       </header>

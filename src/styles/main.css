@@ -187,10 +187,7 @@ button {
 }
 
 .load-menu__export {
-  width: auto;
-  padding: 0 6px;
-  font-size: 10px;
-  font-weight: 700;
+  flex: 0 0 28px;
 }
 
 .load-menu__export:hover { background: var(--primary-soft); color: var(--primary); }
