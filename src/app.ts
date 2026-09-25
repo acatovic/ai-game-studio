@@ -1213,12 +1213,13 @@ function askName(title: string, initial = "", maxLength = 60): Promise<string | 
       required maxlength="${maxLength}" pattern="[a-zA-Z0-9_\\-]+" autofocus autocomplete="off" />
     <p>Use letters, numbers, hyphens or underscores. This name is used for the folder.</p>
     <div class="name-dialog__actions">
-      <button class="btn btn--secondary" value="cancel" formnovalidate>Cancel</button>
-      <button class="btn btn--primary" value="save">Save name</button>
+      <button class="btn btn--secondary" type="button" value="cancel">Cancel</button>
+      <button class="btn btn--primary" type="submit" value="save">Save name</button>
     </div>
   </form>`;
   document.body.appendChild(dialog);
   return new Promise(resolve => {
+    dialog.querySelector<HTMLButtonElement>('button[value="cancel"]')!.addEventListener("click", () => dialog.close("cancel"));
     dialog.addEventListener("close", () => {
       const value = dialog.returnValue === "save" ? dialog.querySelector<HTMLInputElement>("input")!.value.trim() : null;
       dialog.remove();
