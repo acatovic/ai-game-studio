@@ -24,6 +24,8 @@ Turn your character into an animation, choose the frames to include, and save sp
 
 ![After Light gameplay featuring sprite assets from Wombo](afterlight-demo.gif)
 
+[Play the demo here.](https://acatovic.github.io/afterlight-play/)
+
 ## Setup and run
 
 Requires Node.js 20+, `ffmpeg`, and `zip` on your PATH.
