@@ -506,12 +506,6 @@ button {
   image-rendering: pixelated;
 }
 
-.preview__caption {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-align: center;
-}
-
 .preview__placeholder {
   color: var(--text-subtle);
   font-size: 12px;
@@ -951,16 +945,15 @@ button {
 .sprite-toolbar { max-width: 1280px; margin: 0 auto 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .sprite-toolbar label { font-weight: 600; font-size: 13px; }
 .sprite-toolbar .select { width: 220px; }
-.sprite-toolbar > span { margin-left: auto; color: var(--text-muted); font-size: 12px; }
 @media (max-width: 700px) {
   .app-header { flex-wrap: wrap; gap: 14px; padding: 16px; }
   .app-header__brand { flex-wrap: wrap; }
-  .sprite-toolbar > span { width: 100%; margin-left: 0; }
 }
 
 [hidden] { display: none !important; }
 .welcome { min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; }
 .welcome__content { width: min(100%, 580px); text-align: center; }
+.welcome__mascot { display: block; width: 160px; height: 160px; object-fit: contain; margin: 0 auto 20px; }
 .welcome__eyebrow { color: var(--primary); font-weight: 600; font-size: 14px; }
 .welcome h1 { font-size: clamp(28px, 4vw, 38px); letter-spacing: -0.035em; line-height: 1.2; margin: 18px 0 12px; }
 .welcome p { color: var(--text-muted); margin: 0 0 30px; font-size: 15px; }

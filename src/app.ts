@@ -23,6 +23,7 @@ import {
   saveSpritesheet,
 } from "./lib/api";
 import { mountMusic } from "./components/music";
+import womboPlayingUrl from "../wombo-playing.gif";
 import { confirmDelete } from "./components/confirm-delete";
 import { mountPreviewBackground } from "./components/preview-background";
 import { mountFrameSize } from "./components/frame-size";
@@ -102,7 +103,6 @@ export function mountApp(root: HTMLElement) {
   const spriteModelSelect = root.querySelector<HTMLSelectElement>("#sprite-model")!;
   const generateSpriteBtn = root.querySelector<HTMLButtonElement>("#btn-generate-sprite")!;
   const spritePreview = root.querySelector<HTMLDivElement>("#sprite-preview")!;
-  const spriteCaption = root.querySelector<HTMLDivElement>("#sprite-caption")!;
   const spriteStatus = root.querySelector<HTMLDivElement>("#sprite-status")!;
   const referenceTabs = root.querySelector<HTMLElement>("#reference-tabs")!;
   for (const view of REFERENCE_VIEWS) {
@@ -678,7 +678,6 @@ export function mountApp(root: HTMLElement) {
     renameSpriteBtn.hidden = !hasCharacter;
     deleteSpriteBtn.hidden = !hasCharacter;
     deleteSpriteBtn.disabled = busy || !hasCharacter;
-    root.querySelector<HTMLElement>(".sprite-toolbar > span")!.hidden = !hasCharacter;
     animationPicker.hidden = !hasAnimation;
     renameAnimationBtn.hidden = !hasAnimation;
     duplicateAnimationBtn.hidden = !hasAnimation;
@@ -737,7 +736,8 @@ export function mountApp(root: HTMLElement) {
     const sizeChanged = state.spritesheetFrameSize !== null && state.spritesheetFrameSize !== state.frameSize;
     sheetSizeHint.textContent = !hasAnimation ? "Add an animation to choose its frame size."
       : sizeChanged ? `Update to apply ${state.frameSize} × ${state.frameSize} px. Saved output is ${state.spritesheetFrameSize} × ${state.spritesheetFrameSize} px.`
-      : "Size of each frame in the PNG and Aseprite files.";
+      : "";
+    sheetSizeHint.hidden = hasAnimation && !sizeChanged;
     sheetSizeHint.classList.toggle("sheet-size-hint--pending", sizeChanged);
 
 
@@ -752,15 +752,8 @@ export function mountApp(root: HTMLElement) {
     const referenceSrc = state.referenceViews[state.referenceView] ?? (state.referenceView === "side" ? state.spriteSrc : null);
     if (referenceSrc) {
       spritePreview.innerHTML = `<img src="${escapeAttr(referenceSrc)}" alt="${REFERENCE_LABELS[state.referenceView]} character reference" />`;
-      if (state.spriteDimensions) {
-        spriteCaption.textContent = `${REFERENCE_LABELS[state.referenceView]} · ${state.spriteDimensions.w} × ${state.spriteDimensions.h} px` +
-          (state.referenceAlignment ? " · Aligned height & center" : " · Generate to add aligned views");
-      } else {
-        spriteCaption.textContent = "—";
-      }
     } else if (!busy) {
       spritePreview.innerHTML = `<span class="preview__placeholder">No sprite yet</span>`;
-      spriteCaption.textContent = "—";
     }
 
     for (const key of ["startImage", "endImage"] as const) {
@@ -788,8 +781,7 @@ export function mountApp(root: HTMLElement) {
 
     if (state.spritesheetSrc && state.spritesheetCols) {
       sheetPreview.innerHTML = `<img src="${state.spritesheetSrc}" alt="Spritesheet" />`;
-      const animationName = state.animations.find(a => a.id === state.activeAnimationId)?.name ?? "animation";
-      sheetMeta.textContent = `${animationName}.png${state.asepriteSrc ? ` + ${animationName}.aseprite` : " (regenerate to save Aseprite)"} · ${state.spritesheetCols} frames · ${state.spritesheetFrameSize} × ${state.spritesheetFrameSize} px`;
+      sheetMeta.textContent = `${state.spritesheetCols} frames / ${state.spritesheetFrameSize} x ${state.spritesheetFrameSize} px`;
     } else {
       sheetPreview.innerHTML = `<span class="sheet-preview__placeholder">Generate a spritesheet to preview here</span>`;
       const pending = state.selectedFrameIndices.size;
@@ -946,6 +938,7 @@ function renderShell(): string {
     <input id="project-import-input" type="file" accept=".zip,application/zip" hidden />
     <section id="welcome" class="welcome">
       <div class="welcome__content">
+        <img class="welcome__mascot" src="${womboPlayingUrl}" alt="Wombo playing" width="160" height="160" />
         <span class="welcome__eyebrow">Wombo - AI Game Studio</span>
         <h1>Bring your next game to life.</h1>
         <p>Create a project to keep your characters, animations and sounds together.</p>
@@ -1004,7 +997,6 @@ function renderShell(): string {
           <button id="btn-add-sprite" class="btn btn--secondary btn--sm" type="button">${plusIcon} Add character</button>
           <button id="btn-rename-sprite" class="btn btn--secondary btn--sm" type="button">Rename</button>
           <button id="btn-delete-sprite" class="btn btn--secondary btn--sm" type="button" title="Delete character" aria-label="Delete character">${trashIcon}</button>
-          <span>Three reference views, connected animations</span>
         </nav>
         <div class="columns">
 
@@ -1071,7 +1063,6 @@ function renderShell(): string {
               <div id="sprite-preview" class="preview__box" role="tabpanel" aria-labelledby="reference-tab-side">
                 <span class="preview__placeholder">No sprite yet</span>
               </div>
-              <div id="sprite-caption" class="preview__caption">—</div>
             </div>
           </section>
 
