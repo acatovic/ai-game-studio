@@ -9,6 +9,7 @@
     "dev:client": "vite",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
+    "backfill:animation-latest": "tsx scripts/backfill-animation-latest.ts",
     "postinstall": "tsx scripts/install.ts"
   },
   "dependencies": {
