@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, rm, writeFile, rename, stat, cp, copyFile } from "node:fs/promises";
 import path from "node:path";
 import { stageAnimationAssets } from "./animation-assets.js";
+import { withAnimationLatest } from "./animation-latest.js";
 import { deleteAssetFolder } from "./asset-storage.js";
 import { readPngDims } from "./files.js";
 import { DEFAULT_IMAGE_MODEL } from "./image.js";
@@ -12,7 +13,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { REFERENCE_VIEWS, REFERENCE_LABELS, sourceKey, type ReferenceView, type ImageSource,
   type ImageSourceOption } from "../src/lib/character.js";
 import { PROJECTS_DIR, PROJECT_FILES, projectDir, safeProjectName, safeAssetId, spriteFile,
-  currentProjectName, projectContext, ensureInsideRoot } from "./files.js";
+  currentProjectName, projectContext, ensureInsideRoot, activeSpriteDir } from "./files.js";
 
 export interface ProjectDocument {
   version: 1;
@@ -193,6 +194,11 @@ export function animationPath(id: string, file = ""): string {
   return path.posix.join("animations", id, file);
 }
 
+async function writeAnimation(animation: AnimationManifest): Promise<void> {
+  await withAnimationLatest(activeSpriteDir(), animation.id, animation,
+    () => writeJson(spriteFile(animationPath(animation.id, "animation.json")), animation));
+}
+
 async function characterManifest(): Promise<CharacterManifest> {
   const doc = await readProjectDocument(currentProjectName());
   const entry = doc.sprites.find(s => s.id === projectContext.getStore()!.spriteId);
@@ -242,7 +248,7 @@ async function characterManifest(): Promise<CharacterManifest> {
     sprite: reference, spriteDimensions: legacy.spriteDimensions, activeAnimationId: id,
     animations: [{ id, name: animation.name }], updatedAt: legacy.updatedAt,
   };
-  await writeJson(path.join(destination, "animation.json"), animation);
+  await writeAnimation(animation);
   await writeJson(file, character);
   return character;
 }
@@ -301,7 +307,8 @@ export async function updateSprite(patch: Partial<ProjectManifest>): Promise<Pro
     startImage: updated.startImage, endImage: updated.endImage,
     frames: updated.frames, selectedFrameIndices: updated.selectedFrameIndices, spritesheet: updated.spritesheet,
     spritesheetFrameCount: updated.spritesheetFrameCount, aseprite: updated.aseprite, previewGif: updated.previewGif, updatedAt: updated.updatedAt };
-  await writeJson(spriteFile(animationPath(summary.id, "animation.json")), animation);
+  if ("spritesheet" in patch || "aseprite" in patch) await writeAnimation(animation);
+  else await writeJson(spriteFile(animationPath(summary.id, "animation.json")), animation);
   }
   await writeJson(spriteFile(PROJECT_FILES.manifest), character);
   await writeProjectDocument(updated.project!);
@@ -421,8 +428,10 @@ async function renameAnimationFolder(character: CharacterManifest, id: string, n
         if (old !== next) await copyFile(spriteFile(old), spriteFile(next));
         animation[key] = next;
       }
-      await writeJson(spriteFile(animationPath(name, "animation.json")), animation);
-      await writeJson(spriteFile(PROJECT_FILES.manifest), updated);
+      await withAnimationLatest(activeSpriteDir(), name, animation, async () => {
+        await writeJson(spriteFile(animationPath(name, "animation.json")), animation);
+        await writeJson(spriteFile(PROJECT_FILES.manifest), updated);
+      });
     } catch (err) {
       await writeJson(spriteFile(animationPath(name, "animation.json")), original);
       throw err;
@@ -492,10 +501,12 @@ async function duplicateAnimationFolder(character: CharacterManifest, id: string
       if (old !== next) await copyFile(spriteFile(old), spriteFile(next));
       animation[key] = next;
     }
-    await writeJson(path.join(destination, "animation.json"), animation);
-    await writeJson(spriteFile(PROJECT_FILES.manifest), { ...character,
-      animations: [...character.animations, { id: name, name }],
-      activeAnimationId: name, updatedAt: animation.updatedAt });
+    await withAnimationLatest(activeSpriteDir(), name, animation, async () => {
+      await writeJson(path.join(destination, "animation.json"), animation);
+      await writeJson(spriteFile(PROJECT_FILES.manifest), { ...character,
+        animations: [...character.animations, { id: name, name }],
+        activeAnimationId: name, updatedAt: animation.updatedAt });
+    });
   } catch (err) {
     await rm(destination, { recursive: true, force: true });
     throw err;
@@ -518,7 +529,7 @@ export async function changeAnimation(action: "new" | "load" | "rename" | "dupli
       await mkdir(spriteFile("animations"), { recursive: true });
       await mkdir(spriteFile(animationPath(id)));
       character.animations.push({ id, name });
-      await writeJson(spriteFile(animationPath(id, "animation.json")), {
+      await writeAnimation({
         id, name, motionPrompt: "", motionModel: current.motionModel, frames: [], selectedFrameIndices: [],
         frameSize: DEFAULT_FRAME_SIZE, spritesheetFrameSize: null,
         spritesheet: null, spritesheetFrameCount: null, aseprite: null, previewGif: null, updatedAt: new Date().toISOString(),
@@ -582,6 +593,9 @@ export async function openProject(name: string): Promise<ProjectView> {
         if (animation.id !== folder) {
           await renameAnimationFolder(character, animation.id, folder);
           character = await characterManifest();
+        } else {
+          const manifest = JSON.parse(await readFile(spriteFile(animationPath(folder, "animation.json")), "utf8")) as AnimationManifest;
+          await withAnimationLatest(activeSpriteDir(), folder, manifest);
         }
       }
       const folder = assetName(sprite.name);

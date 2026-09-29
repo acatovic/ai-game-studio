@@ -36,6 +36,7 @@ test('named character and animation directories, renames, empty projects, and le
       view = await p.changeAnimation('new', 'idle');
     });
     assert.equal(view.activeAnimationId, 'idle');
+    assert.deepEqual(await readdir(path.join(storage.PROJECTS_DIR, 'game/sprites/scientist-male/animations/idle/assets/latest')), []);
     await within('scientist-male', 'idle', async () => {
       await mkdir(f.spriteFile('animations/idle/frames'));
       await writeFile(f.spriteFile('animations/idle/frames/frame-00001.png'), png);
@@ -43,6 +44,8 @@ test('named character and animation directories, renames, empty projects, and le
       await writeFile(f.spriteFile('animations/idle/idle.aseprite'), 'aseprite data');
       await p.updateSprite({ motionPrompt: 'idle breathing', frames: ['animations/idle/frames/frame-00001.png'],
         selectedFrameIndices: [0], spritesheet: 'animations/idle/idle.png', aseprite: 'animations/idle/idle.aseprite', spritesheetFrameCount: 1 });
+      assert.deepEqual(await readFile(f.spriteFile('animations/idle/assets/latest/idle.png')), png);
+      assert.equal(await readFile(f.spriteFile('animations/idle/assets/latest/idle.aseprite'), 'utf8'), 'aseprite data');
       await p.changeAnimation('new', 'walking');
     });
     // Another tab's active animation doesn't redirect the original tab.
@@ -68,6 +71,9 @@ test('named character and animation directories, renames, empty projects, and le
       assert.ok(copy.previewGifUrl!.endsWith('/idle-2/preview.gif'));
       assert.deepEqual(await readFile(f.spriteFile('animations/idle-2/idle-2.png')), png);
       assert.equal(await readFile(f.spriteFile('animations/idle-2/idle-2.aseprite'), 'utf8'), 'aseprite data');
+      assert.deepEqual(await readdir(f.spriteFile('animations/idle-2/assets/latest')), ['idle-2.aseprite', 'idle-2.png']);
+      assert.deepEqual(await readFile(f.spriteFile('animations/idle-2/assets/latest/idle-2.png')), png);
+      assert.equal(await readFile(f.spriteFile('animations/idle-2/assets/latest/idle-2.aseprite'), 'utf8'), 'aseprite data');
       assert.equal(await readFile(f.spriteFile('animations/idle-2/source.mp4'), 'utf8'), 'source clip');
       assert.equal(await readFile(f.spriteFile('animations/idle/animation.json'), 'utf8'), original);
       assert.equal((await p.openProject('game')).activeAnimationId, 'idle-2');
@@ -84,7 +90,10 @@ test('named character and animation directories, renames, empty projects, and le
       await assert.rejects(p.changeAnimation('duplicate', 'untracked'), /folder.*exists/);
       assert.equal(await readFile(f.spriteFile('animations/untracked/keep.txt'), 'utf8'), 'keep');
       // A broken source output aborts the copy and never publishes a partial animation.
-      await p.updateSprite({ aseprite: 'animations/idle/missing.aseprite' });
+      await assert.rejects(p.updateSprite({ aseprite: 'animations/idle/missing.aseprite' }), { code: 'ENOENT' });
+      assert.equal(await readFile(f.spriteFile('animations/idle/animation.json'), 'utf8'), original);
+      // Simulate already-corrupt saved metadata; normal saves reject missing outputs.
+      await p.writeJson(f.spriteFile('animations/idle/animation.json'), { ...JSON.parse(original), aseprite: 'animations/idle/missing.aseprite' });
       const beforeFailure = await readFile(f.spriteFile('sprite.json'), 'utf8');
       await assert.rejects(p.changeAnimation('duplicate', 'failed-copy'), { code: 'ENOENT' });
       assert.equal(await readFile(f.spriteFile('sprite.json'), 'utf8'), beforeFailure);
@@ -96,11 +105,16 @@ test('named character and animation directories, renames, empty projects, and le
     assert.deepEqual(emptyCopy.frames, []);
     assert.equal(emptyCopy.spritesheetUrl, null);
     assert.equal(emptyCopy.asepriteUrl, null);
+    assert.deepEqual(await readdir(path.join(storage.PROJECTS_DIR, 'game/sprites/scientist-male/animations/walking-2/assets/latest')), []);
     await within('scientist-male', 'idle', () => p.changeAnimation('load', 'idle'));
     view = await within('scientist-male', 'idle', () => p.changeAnimation('rename', 'standing'));
     assert.equal(view.activeAnimationId, 'standing');
     assert.ok(view.frames[0].includes('/sprites/scientist-male/animations/standing/frames/'));
     assert.ok(view.asepriteUrl!.endsWith('/animations/standing/standing.aseprite'));
+    const standingLatest = path.join(storage.PROJECTS_DIR, 'game/sprites/scientist-male/animations/standing/assets/latest');
+    assert.deepEqual(await readdir(standingLatest), ['standing.aseprite', 'standing.png']);
+    assert.deepEqual(await readFile(path.join(standingLatest, 'standing.png')), png);
+    assert.equal(await readFile(path.join(standingLatest, 'standing.aseprite'), 'utf8'), 'aseprite data');
     await assert.rejects(stat(path.join(storage.PROJECTS_DIR, 'game/sprites/scientist-male/animations/idle')), { code: 'ENOENT' });
     await assert.rejects(within('scientist-male', 'idle', p.readManifest), /Animation not found/);
     await assert.rejects(within('scientist-male', 'standing', () => p.changeAnimation('rename', 'walking')), /already exists/);
@@ -150,6 +164,7 @@ test('named character and animation directories, renames, empty projects, and le
     assert.equal(migrated.referenceStyleId, null);
     assert.equal(migrated.frames[0], '/projects/legacy/sprites/scientist-male/animations/idle/frames/a.png');
     assert.equal(await readFile(path.join(legacyRoot, 'sprites/scientist-male/animations/idle/idle.aseprite'), 'utf8'), 'preserved aseprite');
+    assert.equal(await readFile(path.join(legacyRoot, 'sprites/scientist-male/animations/idle/assets/latest/idle.aseprite'), 'utf8'), 'preserved aseprite');
     await assert.rejects(stat(legacyDir), { code: 'ENOENT' });
     assert.equal((await p.openProject('legacy')).asepriteUrl, migrated.asepriteUrl);
 
@@ -164,6 +179,7 @@ test('named character and animation directories, renames, empty projects, and le
     const old = await p.openProject('old');
     assert.equal(old.project.activeSpriteId, 'scientist');
     assert.ok(old.asepriteUrl!.includes('/animations/scientist-animation/'));
+    assert.deepEqual(await readFile(path.join(storage.PROJECTS_DIR, 'old/sprites/scientist/animations/scientist-animation/assets/latest/scientist-animation.png')), png);
     assert.deepEqual(await readFile(path.join(storage.PROJECTS_DIR, 'old/sprites/scientist/ref/sprite.png')), png);
     await p.deleteSavedProject('old');
   } finally { await rm(root, { recursive: true, force: true }); }
