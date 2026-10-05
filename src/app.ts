@@ -27,6 +27,7 @@ import womboPlayingUrl from "../wombo-playing.gif";
 import { confirmDelete } from "./components/confirm-delete";
 import { mountPreviewBackground } from "./components/preview-background";
 import { mountFrameSize } from "./components/frame-size";
+import { mountFrameMagnifier } from "./components/frame-magnifier";
 import { Store, createInitialState, hydrateFromView } from "./lib/state";
 import { composeSpritesheet } from "./lib/spritesheet";
 import { REFERENCE_VIEWS, REFERENCE_LABELS, sourceKey, type ImageSourceOption } from "./lib/character";
@@ -152,6 +153,8 @@ export function mountApp(root: HTMLElement) {
   const motionModelSelect = root.querySelector<HTMLSelectElement>("#motion-model")!;
   const generateFramesBtn = root.querySelector<HTMLButtonElement>("#btn-generate-frames")!;
   const framesGrid = root.querySelector<HTMLDivElement>("#frames-grid")!;
+  const frameMagnifier = mountFrameMagnifier(framesGrid);
+  let lastFrameMarkup = "";
   const framesStatus = root.querySelector<HTMLDivElement>("#frames-status")!;
   const generateSheetBtn = root.querySelector<HTMLButtonElement>("#btn-generate-sheet")!;
 
@@ -777,7 +780,14 @@ export function mountApp(root: HTMLElement) {
       : "Optional: choose a reference or a sequence’s first/last included frame. Poses are saved with this animation.");
     endpointHint.classList.toggle("status--error", !!frameError);
 
-    framesGrid.innerHTML = renderFramesGrid(state.frames, state.selectedFrameIndices);
+    const frameMarkup = renderFramesGrid(state.frames, state.selectedFrameIndices);
+    if (lastFrameMarkup !== frameMarkup) {
+      const focusedIndex = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(".frame-tile")?.dataset.index;
+      framesGrid.innerHTML = frameMarkup;
+      lastFrameMarkup = frameMarkup;
+      if (focusedIndex !== undefined) framesGrid.querySelector<HTMLElement>(`[data-index="${focusedIndex}"]`)?.focus();
+    }
+    frameMagnifier.refresh();
 
     if (state.spritesheetSrc && state.spritesheetCols) {
       sheetPreview.innerHTML = `<img src="${state.spritesheetSrc}" alt="Spritesheet" />`;
@@ -877,10 +887,10 @@ function renderFramesGrid(frames: string[], selected: Set<number>): string {
     const isSelected = selected.has(i);
     const empty = !frame;
     tiles.push(`
-      <div class="frame-tile ${isSelected ? "is-selected" : ""} ${empty ? "is-empty" : ""}" data-index="${i}">
+      <button type="button" class="frame-tile ${isSelected ? "is-selected" : ""} ${empty ? "is-empty" : ""}" data-index="${i}" ${empty ? "disabled" : `aria-label="Frame ${i + 1}" aria-pressed="${isSelected}"`}>
         <div class="frame-tile__num">${i + 1}</div>
         ${frame ? `<img src="${frame}" alt="Frame ${i + 1}" />` : ""}
-      </div>
+      </button>
     `);
   }
   return tiles.join("");
