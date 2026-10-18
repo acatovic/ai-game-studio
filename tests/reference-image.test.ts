@@ -101,8 +101,8 @@ test("reference attachments persist per character and guide creation without ove
     assert.equal((await current()).spritePrompt, draft.spritePrompt);
     const generated = await ok("/api/sprites/generate", { prompt: draft.spritePrompt });
     const calls = (await readFile(requestsFile, "utf8")).trim().split("\n").map(line => JSON.parse(line).body);
-    assert.equal(calls.length, 4);
-    assert.deepEqual(calls[0].input_references.map((ref: any) => ref.image_url.url), [input.dataUrl]);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].input_references[1].image_url.url, input.dataUrl);
     assert.match(calls[0].prompt, /text prompt takes priority/i);
     assert.match(calls[0].prompt, /style or aesthetic reference/i);
     assert.match(calls[0].prompt, /identity only when the text requests that character/i);
@@ -111,19 +111,10 @@ test("reference attachments persist per character and guide creation without ove
       assert.ok(body.prompt.includes(draft.spritePrompt), "preserve the user's complete character description");
       assert.doesNotMatch(body.prompt, /pixel-art style/);
     }
-    const sideOriginalUrl = generated.view.referenceViews.side.replace(/side\.png$/, "side-original.png");
-    const sideOriginal = Buffer.from(await (await fetch(base + sideOriginalUrl)).arrayBuffer());
-    const generatedSide = `data:image/png;base64,${sideOriginal.toString("base64")}`;
-    for (const body of calls.slice(1, 3)) {
-      assert.deepEqual(body.input_references.map((ref: any) => ref.image_url.url), [generatedSide],
-        "front and back must use the generated character, without reintroducing the uploaded subjects");
-      assert.match(body.prompt, /sole visual reference for identity and style/);
-    }
-    const frontOriginalUrl = generated.view.referenceViews.front.replace(/front\.png$/, "front-original.png");
-    const frontOriginal = Buffer.from(await (await fetch(base + frontOriginalUrl)).arrayBuffer());
-    assert.deepEqual(calls[3].input_references.map((ref: any) => ref.image_url.url),
-      [`data:image/png;base64,${frontOriginal.toString("base64")}`],
-      "side left must use the generated front view, without reintroducing the uploaded subject");
+    assert.equal(calls[0].input_references.length, 2, "layout template first, uploaded visual guidance second");
+    const templateUrl = generated.view.referenceViews.side.replace(/side\.png$/, "sheet-template.png");
+    const template = Buffer.from(await (await fetch(base + templateUrl)).arrayBuffer());
+    assert.equal(calls[0].input_references[0].image_url.url, `data:image/png;base64,${template.toString("base64")}`);
     assert.equal(generated.view.spritePrompt, draft.spritePrompt);
     assert.equal(generated.view.styleId, null);
     assert.equal(generated.view.referenceStyleId, null);
@@ -140,11 +131,9 @@ test("reference attachments persist per character and guide creation without ove
     await ok("/api/sprites/reference-image", { image: null });
     assert.equal((await current()).referenceImage, null);
     await ok("/api/sprites/generate", { prompt: "text only" });
-    const lastCalls = (await readFile(requestsFile, "utf8")).trim().split("\n").slice(-4).map(line => JSON.parse(line).body);
-    assert.equal(lastCalls[0].input_references, undefined);
-    assert.equal(lastCalls[1].input_references.length, 1);
-    assert.equal(lastCalls[2].input_references.length, 1);
-    assert.equal(lastCalls[3].input_references.length, 1);
+    const lastCalls = (await readFile(requestsFile, "utf8")).trim().split("\n").slice(-1).map(line => JSON.parse(line).body);
+    assert.equal(lastCalls[0].input_references.length, 1, "without an upload, only the layout template is sent");
+    assert.equal(lastCalls[0].input_references[0].image_url.url, calls[0].input_references[0].image_url.url);
   } finally {
     child.kill();
     if (child.exitCode === null) await once(child, "exit");

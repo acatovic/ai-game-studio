@@ -1,48 +1,14 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { REFERENCE_VIEWS, type ReferenceView } from "../src/lib/character.js";
-import { readPngDims, spriteFile } from "./files.js";
+import { REFERENCE_LABELS, REFERENCE_VIEWS, type ReferenceView } from "../src/lib/character.js";
+import { spriteFile } from "./files.js";
 import { generateSpriteImage, type ImageModelId } from "./image.js";
+import { decodeReference, encodeReference } from "./reference-pixels.js";
+import { extractReferenceSheet, referenceSheetTemplate, REFERENCE_SHEET_DIRECTIVE } from "./reference-sheet.js";
+export { decodeReference } from "./reference-pixels.js";
 
 export const REFERENCE_SIZE = 1024;
-const MAX_PIXELS = 16_777_216;
-
-async function ffmpeg(input: Buffer, args: string[], maxOutput: number): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", ...args],
-      { stdio: ["pipe", "pipe", "pipe"] });
-    const chunks: Buffer[] = [];
-    let length = 0;
-    const timer = setTimeout(() => { child.kill(); reject(new Error("Reference processing timed out")); }, 30_000);
-    child.stdout.on("data", (chunk: Buffer) => {
-      length += chunk.length;
-      if (length > maxOutput) { child.kill(); reject(new Error("Reference image is too large")); }
-      else chunks.push(chunk);
-    });
-    child.stderr.resume();
-    child.stdin.on("error", () => { /* Report via close/error. */ });
-    child.on("error", () => { clearTimeout(timer); reject(new Error("Could not start ffmpeg to align references")); });
-    child.on("close", code => {
-      clearTimeout(timer);
-      if (code !== 0) reject(new Error("Could not process reference image"));
-      else resolve(Buffer.concat(chunks));
-    });
-    child.stdin.end(input);
-  });
-}
-
-export async function decodeReference(png: Buffer) {
-  const dims = readPngDims(png);
-  if (!dims || dims.w < 1 || dims.h < 1 || dims.w * dims.h > MAX_PIXELS) {
-    throw new Error("Invalid reference image dimensions");
-  }
-  const pixels = await ffmpeg(png, ["-i", "pipe:0", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1"],
-    dims.w * dims.h * 4);
-  if (pixels.length !== dims.w * dims.h * 4) throw new Error("Incomplete reference image");
-  return { ...dims, pixels };
-}
 
 function foreground(image: Awaited<ReturnType<typeof decodeReference>>) {
   const { w, h, pixels } = image;
@@ -68,7 +34,10 @@ function foreground(image: Awaited<ReturnType<typeof decodeReference>>) {
 
 /** Normalize actual foreground bounds, never the provider's canvas bounds. */
 export async function alignReferenceViews(sources: Record<ReferenceView, Buffer>) {
-  const images = await Promise.all(REFERENCE_VIEWS.map(async view => foreground(await decodeReference(sources[view]))));
+  const images = await Promise.all(REFERENCE_VIEWS.map(async view => {
+    try { return foreground(await decodeReference(sources[view])); }
+    catch (error) { throw new Error(`${REFERENCE_LABELS[view]}: ${error instanceof Error ? error.message : String(error)}`); }
+  }));
   // One height for every view; allow wide characters without clipping or stretching.
   const maxWidthRatio = Math.max(...images.map(image => image.width / image.height));
   const height = Math.min(820, Math.floor(820 / maxWidthRatio));
@@ -100,24 +69,11 @@ export async function alignReferenceViews(sources: Record<ReferenceView, Buffer>
         image.pixels.copy(rgba, ((y + top) * REFERENCE_SIZE + left + x) * 4, offset, offset + 4);
       }
     }
-    aligned[REFERENCE_VIEWS[index]] = await ffmpeg(rgba,
-      ["-f", "rawvideo", "-pixel_format", "rgba", "-video_size", `${REFERENCE_SIZE}x${REFERENCE_SIZE}`,
-        "-i", "pipe:0", "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "pipe:1"], rgba.length + 100_000);
+    aligned[REFERENCE_VIEWS[index]] = await encodeReference(REFERENCE_SIZE, REFERENCE_SIZE, rgba);
   }
   return { images: aligned, alignment: { canvasSize: REFERENCE_SIZE, height, top, centerX: REFERENCE_SIZE / 2 } };
 }
 
-const VIEW_PROMPTS: Record<ReferenceView, string> = {
-  side: "Strict side profile, facing RIGHT (left-to-right).",
-  "side-left": "Strict side profile, facing LEFT (right-to-left). Keep the character facing left throughout the image.",
-  front: "Strict FRONT view, facing directly toward the viewer.",
-  back: "Strict BACK view, facing directly away from the viewer; show the back of the head and clothing.",
-};
-const DIRECTIVE =
-  "Produce exactly ONE full-body character in a neutral standing pose, arms relaxed. " +
-  "Orthographic game reference, no perspective, no text, no labels, no shadows, no floor. " +
-  "Keep the full character and every accessory inside the image with a generous empty margin. " +
-  "Use a perfectly flat solid chroma green #00b140 backdrop, with no green on the character. ";
 const UPLOADED_REFERENCE_DIRECTIVE =
   "Create the character described in the text prompt. The text prompt takes priority over conflicting image content " +
   "for the subject, species, anatomy, clothing, colors and art style. " +
@@ -133,49 +89,35 @@ export async function generateCharacterReferences(
 ) {
   const description = `Character description:\n${prompt.trim()}\n\n`;
   const referenceGuidance = referenceImage ? UPLOADED_REFERENCE_DIRECTIVE : "";
-  const side = await generateSpriteImage(`${description}${referenceGuidance}${DIRECTIVE}${VIEW_PROMPTS.side}`, model,
-    referenceImage ? [referenceImage] : []);
-  const reference = `data:image/png;base64,${side}`;
-  // Sequential calls keep provider concurrency modest and avoid orphan requests on failure.
-  const sources = { side: Buffer.from(side, "base64") } as Record<ReferenceView, Buffer>;
-  for (const view of ["front", "back"] as const) {
-    // The upload may depict a different subject. Once created, the side view
-    // supplies both the requested identity and style for the remaining angles.
-    const base64 = await generateSpriteImage(
-      `${description}${DIRECTIVE}${VIEW_PROMPTS[view]} ` +
-      "The supplied image is the generated side view of the requested character. " +
-      "Use it as the sole visual reference for identity and style. Rotate that character to this view. " +
-      "Preserve the exact identity, anatomy, costume, " +
-      "accessories, colors, proportions, art style, linework, texture and neutral pose. Do not redesign the character.",
-      model, [reference]);
-    sources[view] = Buffer.from(base64, "base64");
-  }
-  const frontReference = `data:image/png;base64,${sources.front.toString("base64")}`;
-  const sideLeft = await generateSpriteImage(
-    `${description}${DIRECTIVE}${VIEW_PROMPTS["side-left"]} ` +
-    "The supplied image shows this character from the FRONT. " +
-    "Turn the same character into a strict side profile facing the LEFT edge of the image. " +
-    "Use the front view to preserve identity, proportions, colors, and art style; " +
-    "do not horizontally flip, trace, or copy it. " +
-    "Keep every asymmetric feature attached to the same anatomical side of the character. " +
-    "An item held in the right hand must remain in the right hand; " +
-    "an item held in the left hand must remain in the left hand. " +
-    "Show side details consistently with the character description. " +
-    "The final character must face LEFT.",
-    model, [frontReference]);
-  sources["side-left"] = Buffer.from(sideLeft, "base64");
-  const normalized = await alignReferenceViews(sources);
+  const template = await referenceSheetTemplate();
+  const sheet = Buffer.from(await generateSpriteImage(
+    `${description}${referenceGuidance}${REFERENCE_SHEET_DIRECTIVE}`, model,
+    [template.dataUrl, ...(referenceImage ? [referenceImage] : [])]), "base64");
   const revision = `references/${randomUUID()}`;
   const directory = spriteFile(revision);
   await mkdir(directory, { recursive: true });
   try {
-    for (const view of REFERENCE_VIEWS) {
-      await writeFile(path.join(directory, `${view}-original.png`), sources[view]);
-      await writeFile(path.join(directory, `${view}.png`), normalized.images[view]);
-    }
+    await writeFile(path.join(directory, "sheet-original.png"), sheet);
+    await writeFile(path.join(directory, "sheet-template.png"), template.bytes);
   } catch (err) {
     await rm(directory, { recursive: true, force: true });
     throw err;
+  }
+  let normalized: Awaited<ReturnType<typeof alignReferenceViews>>;
+  try {
+    const sources = await extractReferenceSheet(sheet);
+    for (const view of REFERENCE_VIEWS) {
+      await writeFile(path.join(directory, `${view}-original.png`), sources[view]);
+    }
+    normalized = await alignReferenceViews(sources);
+    for (const view of REFERENCE_VIEWS) {
+      await writeFile(path.join(directory, `${view}.png`), normalized.images[view]);
+    }
+  } catch (err) {
+    // Keep paid provider output available for inspection and local reprocessing.
+    // Nothing points at this revision until every view has succeeded.
+    const message = err instanceof Error ? err.message : "Could not extract the character views";
+    throw new Error(`${message} The original sheet was retained in ${revision}/sheet-original.png.`);
   }
   return {
     directory,

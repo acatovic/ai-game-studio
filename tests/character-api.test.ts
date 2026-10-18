@@ -7,6 +7,7 @@ import path from "node:path";
 import os from "node:os";
 import type { ProjectView } from "../src/lib/api.ts";
 import { decodeReference } from "../server/character-references.ts";
+import { referenceSheetFixture, SHEET_COLORS } from "./helpers/reference-sheet.ts";
 
 test("aligned references and saved endpoint poses survive generations, edits, rename, duplication, deletion and reopen", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "studio-characters-"));
@@ -58,26 +59,41 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     assert.ok(reference.imageSources.some(option => option.source.kind === "reference"
       && option.source.view === "side-left" && option.label === "Side Left"));
     const recorded = (await readFile(requestsFile, "utf8")).trim().split("\n").map(line => JSON.parse(line));
-    assert.equal(recorded.length, 4);
-    assert.match(recorded[0].body.prompt, /facing RIGHT/);
-    assert.match(recorded[0].body.prompt, /hard-edged cel-shading tones/);
-    assert.doesNotMatch(recorded[0].body.prompt, /Extremely low-resolution 8-bit/);
-    assert.match(recorded[1].body.prompt, /hard-edged cel-shading tones/);
-    assert.equal(recorded[1].body.input_references[0].image_url.url, recorded[2].body.input_references[0].image_url.url);
-    assert.match(recorded[1].body.prompt, /Strict FRONT/);
-    assert.match(recorded[2].body.prompt, /Strict BACK/);
-    assert.match(recorded[3].body.prompt, /facing LEFT/);
-    assert.equal(recorded[3].body.input_references.length, 1);
-    assert.equal(recorded[3].body.input_references[0].image_url.url,
-      `data:image/png;base64,${(await bytes(reference.referenceViews.front!.replace(/front\.png$/, "front-original.png"))).toString("base64")}`);
+    assert.equal(recorded.length, 1, "all four views come from one provider request");
+    const sheetRequest = recorded[0].body;
+    assert.match(sheetRequest.prompt, /facing RIGHT/);
+    assert.match(sheetRequest.prompt, /hard-edged cel-shading tones/);
+    assert.doesNotMatch(sheetRequest.prompt, /Extremely low-resolution 8-bit/);
+    assert.match(sheetRequest.prompt, /Strict FRONT/);
+    assert.match(sheetRequest.prompt, /Strict BACK/);
+    assert.match(sheetRequest.prompt, /facing LEFT/);
+    assert.equal(sheetRequest.input_references.length, 1, "text-only generation sends just the layout template");
+    const revisionUrl = reference.referenceViews.side!.replace(/side\.png$/, "");
+    assert.deepEqual(await bytes(revisionUrl + "sheet-template.png"),
+      Buffer.from(sheetRequest.input_references[0].image_url.url.split(",")[1], "base64"));
+    assert.ok((await bytes(revisionUrl + "sheet-original.png")).length > 0);
 
     await ok("/api/projects/animations/new", { value: "idle-side" });
     headers["X-Animation-Id"] = "idle-side";
+    for (const view of ["front", "back", "side", "side-left"] as const) {
+      const pose = await ok("/api/projects/draft", { ...draft, startImage: { kind: "reference", view }, endImage: null });
+      assert.deepEqual(await bytes(pose.startImage!.url), await bytes(reference.referenceViews[view]!),
+        `the ${view} picker snapshots its individual extracted PNG`);
+    }
     const idle = await ok("/api/sprites/animate", { text: "idle", model: "x-ai/grok-imagine-video" });
     assert.ok(idle.frames.length >= 4);
     const idleCalls = (await readFile(requestsFile, "utf8")).trim().split("\n").map(line => JSON.parse(line));
     assert.match(idleCalls.at(-1).body.prompt, /hard-edged cel-shading tones/);
     assert.doesNotMatch(idleCalls.at(-1).body.prompt, /pixel-art style/);
+    const idleRequest = idleCalls.at(-1).body;
+    assert.equal(idleRequest.frame_images.length, 1);
+    assert.equal(idleRequest.frame_images[0].frame_type, "first_frame");
+    const conditioned = await decodeReference(Buffer.from(idleRequest.frame_images[0].image_url.url.split(",")[1], "base64"));
+    assert.equal(conditioned.w, 1024);
+    assert.equal(conditioned.h, 1024);
+    const center = (512 * conditioned.w + 512) * 4;
+    assert.deepEqual([...conditioned.pixels.subarray(center, center + 4)], SHEET_COLORS["side-left"],
+      "video receives the selected side-left character, rather than the full sheet or default right view");
     await ok("/api/projects/selection", { selectedIndices: [3, 1] });
     await ok("/api/projects/animations/new", { value: "turn-north" });
     headers["X-Animation-Id"] = "turn-north";
@@ -151,11 +167,24 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     assert.equal((await post("/api/projects/draft", { ...draft, startImage: step.endImage!.source })).status, 400);
 
     // Failure leaves the complete reference set and existing animation untouched.
-    response = await post("/api/sprites/generate", { prompt: "fail-reference" });
-    assert.equal(response.status, 400);
-    let current = await (await fetch(base + "/api/projects/current", { headers })).json() as ProjectView;
-    assert.deepEqual(current.referenceViews, reference.referenceViews);
-    assert.deepEqual(await bytes(current.spriteUrl!), sideBytes);
+    headers["X-Animation-Id"] = "turn-north";
+    let current: ProjectView;
+    for (const prompt of ["fail-reference", "empty-reference", "clipped-reference"]) {
+      response = await post("/api/sprites/generate", { prompt });
+      assert.equal(response.status, 400);
+      if (prompt !== "fail-reference") {
+        const error = (await response.json()).error as string;
+        const retained = error.match(/references\/[a-f0-9-]+\/sheet-original\.png/)?.[0];
+        assert.ok(retained, "failed processing retains the provider sheet for inspection");
+        const characterUrl = reference.referenceViews.side!.replace(/references\/[^/]+\/side\.png$/, "");
+        assert.deepEqual(await bytes(characterUrl + retained),
+          referenceSheetFixture(256, prompt === "empty-reference" ? "empty" : "clipped"));
+      }
+      current = await (await fetch(base + "/api/projects/current", { headers })).json() as ProjectView;
+      assert.deepEqual(current.referenceViews, reference.referenceViews, `${prompt} preserves all previously committed views`);
+      assert.deepEqual(await bytes(current.spriteUrl!), sideBytes);
+      assert.deepEqual(current.frames, turn.frames, `${prompt} preserves animation outputs`);
+    }
     headers["X-Animation-Id"] = "turn-north";
     assert.equal((await post("/api/sprites/animate", { text: "fail-video", model: "minimax/hailuo-3" })).status, 400);
     current = await (await fetch(base + "/api/projects/current", { headers })).json();
@@ -230,7 +259,7 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     assert.equal(restyled.styleId, "storybook-3d");
     assert.equal(restyled.referenceStyleId, "storybook-3d");
     assert.ok(restyled.animations.length > 0, "regenerating references preserves animations");
-    const restyledCalls = (await readFile(requestsFile, "utf8")).trim().split("\n").slice(-4).map(line => JSON.parse(line).body);
+    const restyledCalls = (await readFile(requestsFile, "utf8")).trim().split("\n").slice(-1).map(line => JSON.parse(line).body);
     for (const call of restyledCalls) assert.match(call.prompt, /rounded sculpted forms/);
     const beforeAI = (await readFile(requestsFile, "utf8")).trim().split("\n").length;
     response = await post("/api/sprites/generate", { prompt: "red hero" });
@@ -238,15 +267,13 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     const aiView = (await response.json()).view as ProjectView;
     assert.ok(aiView.referenceViews["side-left"]);
     const aiCalls = (await readFile(requestsFile, "utf8")).trim().split("\n").slice(beforeAI).map(line => JSON.parse(line).body);
-    assert.equal(aiCalls.length, 4);
-    assert.match(aiCalls[3].prompt, /facing LEFT/);
-    assert.match(aiCalls[3].prompt, /same anatomical side/);
-    assert.match(aiCalls[3].prompt, /from the FRONT/);
-    assert.match(aiCalls[3].prompt, /right hand must remain in the right hand/);
-    assert.match(aiCalls[3].prompt, /do not horizontally flip/);
-    assert.equal(aiCalls[3].input_references.length, 1);
-    assert.equal(aiCalls[3].input_references[0].image_url.url,
-      `data:image/png;base64,${(await bytes(aiView.referenceViews.front!.replace(/front\.png$/, "front-original.png"))).toString("base64")}`);
+    assert.equal(aiCalls.length, 1);
+    assert.match(aiCalls[0].prompt, /facing LEFT/);
+    assert.match(aiCalls[0].prompt, /same anatomical side/);
+    assert.match(aiCalls[0].prompt, /right hand must remain in the right hand/);
+    assert.match(aiCalls[0].prompt, /do not horizontally flip/);
+    assert.equal(aiCalls[0].input_references.length, 1);
+
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       const exited = once(child, "exit"); child.kill(); await exited;

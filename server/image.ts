@@ -23,7 +23,7 @@ const CHROMA_DIRECTIVE =
   "hex #00b140 (RGB 0, 177, 64). The background must be one uniform color " +
   "with no gradients, no shadows, no lighting variation, and no texture. " +
   "The subject itself must contain no green elements that could conflict " +
-  "with chroma keying. Centered, full subject visible.";
+  "with chroma keying. Keep all requested subjects fully visible.";
 
 interface ImageGenerationResponse {
   data?: Array<{

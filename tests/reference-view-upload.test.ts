@@ -100,9 +100,9 @@ test("uploaded views work without character generation and a later generation re
     }
     const imageCalls = (await readFile(requests, "utf8")).trim().split("\n").map(line => JSON.parse(line))
       .filter(call => call.url === "https://openrouter.ai/api/v1/images");
-    assert.equal(imageCalls.length, 4);
-    assert.equal(imageCalls[0].body.input_references, undefined,
-      "uploaded views are never passed into character generation");
+    assert.equal(imageCalls.length, 1);
+    assert.equal(imageCalls[0].body.input_references.length, 1,
+      "only the layout template is sent; uploaded views are never passed into character generation");
     assert.equal(generated.spriteUrl, generated.referenceViews.side);
     assert.ok(generated.animations.length, "character regeneration retains animations");
   } finally {
