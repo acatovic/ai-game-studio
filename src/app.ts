@@ -335,7 +335,7 @@ export function mountApp(root: HTMLElement) {
       return;
     }
     store.set({ status: "generating-image", errorMessage: null });
-    setStatus(spriteStatus, `${spinner()}Generating and aligning side right, side left, front and back views…`);
+    setStatus(spriteStatus, `${spinner()}Generating one four-view sheet, then extracting and aligning the views…`);
     try {
       await persistDraft();
       const result = await generateSprite(prompt, store.get().spriteModel, store.get().styleId);

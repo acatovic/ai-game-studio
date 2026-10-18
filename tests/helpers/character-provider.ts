@@ -1,6 +1,6 @@
 import { appendFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
-import { pngFixture } from "./png.ts";
+import { referenceSheetFixture } from "./reference-sheet.ts";
 
 const frames = Buffer.alloc(6 * 128 * 128 * 4);
 for (let frame = 0; frame < 6; frame++) for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
@@ -20,21 +20,11 @@ globalThis.fetch = async (input, init) => {
   const body = JSON.parse(String(init?.body ?? "{}"));
   if (process.env.STUDIO_TEST_REQUESTS) await appendFile(process.env.STUDIO_TEST_REQUESTS, JSON.stringify({ url, body }) + "\n");
   if (url === "https://openrouter.ai/api/v1/images") {
-    const back = body.prompt.includes("Strict BACK");
-    if (back && body.prompt.includes("fail-reference")) {
+    if (body.prompt.includes("fail-reference")) {
       return new Response(JSON.stringify({ error: { message: "Fixture image failure" } }), { status: 500 });
     }
-    const front = body.prompt.includes("Strict FRONT");
-    const left = front ? 10 : back ? 30 : 22;
-    const top = front ? 10 : back ? 20 : 4;
-    const width = front ? 22 : back ? 26 : 14;
-    const height = front ? 45 : back ? 36 : 55;
-    const pixels = [];
-    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
-      pixels.push(...(x >= left && x < left + width && y >= top && y < top + height
-        ? [170, 20, 60, 255] : [0, 177, 64, 255]));
-    }
-    return Response.json({ data: [{ b64_json: pngFixture(64, 64, pixels).toString("base64"), media_type: "image/png" }] });
+    const bad = body.prompt.includes("empty-reference") ? "empty" : body.prompt.includes("clipped-reference") ? "clipped" : undefined;
+    return Response.json({ data: [{ b64_json: referenceSheetFixture(256, bad).toString("base64"), media_type: "image/png" }] });
   }
   if (url === "https://openrouter.ai/api/v1/videos") {
     if (body.model === "minimax/hailuo-3-max") {

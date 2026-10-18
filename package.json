@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "backfill:animation-latest": "tsx scripts/backfill-animation-latest.ts",
+    "extract:references": "tsx scripts/extract-reference-sheet.ts",
     "postinstall": "tsx scripts/install.ts"
   },
   "dependencies": {

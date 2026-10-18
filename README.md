@@ -1,12 +1,18 @@
 # <img src="wombo-playing.gif" alt="Wombo mascot playing" width="96" height="96"> Wombo - The AI Game Studio
 
-Wombo is created with the help of Codex and Astra. It allows you to create named characters, animations, and sounds from text prompts. Generate aligned side, front and back references, then create effectively any animation sequence (e.g. idle, walking, fighting) with automatically saved PNG and Aseprite files. Image and video calls go through OpenRouter; Sound & SFX uses ElevenLabs directly from the server.
+Wombo is created with the help of Codex and Astra. It allows you to create named characters, animations, and sounds from text prompts. Generate aligned front, side-left, side-right and back references from one turnaround sheet, then create effectively any animation sequence (e.g. idle, walking, fighting) with automatically saved PNG and Aseprite files. Image and video calls go through OpenRouter; Sound & SFX uses ElevenLabs directly from the server.
 
 ## Character creation
 
-Describe your character and generate aligned side, front and back reference views.
+Describe your character and generate all four views in one image request. A labeled 2×2 template places **Front / Side Left** on the top row and **Side Right / Back** on the bottom row to help keep the character consistent across views.
 
-Attach an image for visual guidance and describe what to use from it, such as its art style or a specific character. Your text controls the subject and requested changes. Front and back views use the generated side view to keep the new character consistent.
+Attach an image for visual guidance and describe what to use from it, such as its art style or a specific character. Your text controls the subject and requested changes. The layout template is sent first, followed by your optional uploaded image.
+
+The server locally segments the character within each whole grid cell, removes labels, separate grid lines and the green background, and aligns the characters to equal heights, centers and baselines on separate 1024×1024 transparent PNGs. This allows modest variations in placement without cutting off the character at fixed inset margins. Select a view in an animation's **Start image** or **End image** picker to condition on that individual extracted image, subject to the chosen video's model capabilities. New references replace the previous set only after all four views are processed successfully.
+
+Each reference revision preserves `sheet-original.png`, `sheet-template.png`, the four unscaled segmented `*-original.png` crops, and the four aligned PNGs. Failed processing retains the full provider sheet and identifies its revision in the error so it can be inspected or reprocessed locally. Existing characters keep their references until regenerated. The generated sheet must follow the square grid; automatic extraction checks for empty or clipped characters but cannot verify that the model drew the correct angle or kept every design detail consistent.
+
+To extract a saved sheet separately, run `npm run extract:references -- /path/to/sheet.png /path/to/new-output-directory`. This uses the same extraction and alignment code as the server and requires ffmpeg. The editable template is [assets/reference-sheet-template.svg](assets/reference-sheet-template.svg); its checked-in PNG is the image supplied to the model.
 
 Choose an art style from 8-bit Pixel, Cinematic Pixel, Cel-shaded 2D, or Storybook 3D. The selection is saved per character and carries into animation; Custom lets you describe the style in your own prompt.
 
