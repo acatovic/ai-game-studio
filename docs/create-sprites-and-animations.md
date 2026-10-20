@@ -7,13 +7,23 @@ Use **Characters & Animations** to create a character, generate its reference vi
 1. Choose **New Project** or **Open**. New projects start with no characters.
 2. Select **Characters & Animations**, click **Add character**, and enter a name such as `scientist-male`.
 3. Pick an **Art style** from the four presets, or leave **Custom** to describe the style yourself. Describe the character's appearance in **Character Prompt** and choose an image model.
-4. Click **Generate Character**, then review **Side**, **Front**, and **Back**.
+4. Click **Generate Character**, then review **Front**, **Side Left**, **Side Right**, and **Back**.
 
 For example:
 
 > A pixel-art scientist wearing a white lab coat, dark trousers, brown boots, and round glasses. Full body, neutral standing pose, consistent proportions.
 
-Generation creates a side view facing right, then uses that image to guide the front and back views. All three are aligned on transparent 1024×1024 canvases with a shared character height, horizontal center, and baseline. Wide characters are scaled to fit without clipping. The app reserves chroma green for background removal, so avoid green clothing or accessories.
+Describe your character and generate all four views in one image request. A labeled 2×2 template places **Front / Side Left** on the top row and **Side Right / Back** on the bottom row to help keep the character consistent across views.
+
+Attach an image for visual guidance and describe what to use from it, such as its art style or a specific character. Your text controls the subject and requested changes. The layout template is sent first, followed by your optional uploaded image.
+
+The server locally segments the character within each whole grid cell, removes labels, separate grid lines and the green background, and aligns the characters to equal heights, centers and baselines on separate 1024×1024 transparent PNGs. This allows modest variations in placement without cutting off the character at fixed inset margins. Select a view in an animation's **Start image** or **End image** picker to condition on that individual extracted image, subject to the chosen video's model capabilities. New references replace the previous set only after all four views are processed successfully.
+
+Each reference revision preserves `sheet-original.png`, `sheet-template.png`, the four unscaled segmented `*-original.png` crops, and the four aligned PNGs. Failed processing retains the full provider sheet and identifies its revision in the error so it can be inspected or reprocessed locally. Existing characters keep their references until regenerated. The generated sheet must follow the square grid; automatic extraction checks for empty or clipped characters but cannot verify that the model drew the correct angle or kept every design detail consistent.
+
+To extract a saved sheet separately, run `npm run extract:references -- /path/to/sheet.png /path/to/new-output-directory`. This uses the same extraction and alignment code as the server and requires ffmpeg. The editable template is [assets/reference-sheet-template.svg](../assets/reference-sheet-template.svg); its checked-in PNG is the image supplied to the model.
+
+The app reserves chroma green for background removal, so avoid green clothing or accessories.
 
 The art style library offers **8-bit Pixel**, **Cinematic Pixel** (the After Light direction), **Cel-shaded 2D**, and **Storybook 3D**. A preset adds rendering instructions when generating; it does not replace or rewrite the visible character prompt. Each character remembers its selection. Existing characters start on Custom, preserving their original prompts and references.
 
@@ -55,7 +65,7 @@ H3 Max's current OpenRouter route rejects two keyframes, and MiniMax rejects an 
 
 The start and end image pickers offer:
 
-- **Side**, **Front**, and **Back** references.
+- **Front**, **Side Left**, **Side Right**, and **Back** references (or **Side** for a legacy character).
 - The **first included frame** and **last included frame** of any animation in the same character, ordered chronologically.
 - A previously selected **Saved pose** when its source has since changed.
 
@@ -97,7 +107,10 @@ By default:
 └── sprites/<character>/
     ├── sprite.json
     ├── references/<revision>/
-    │   ├── side.png
+    │   ├── sheet-original.png
+    │   ├── sheet-template.png
+    │   ├── side-left.png
+    │   ├── side.png             # Side Right
     │   ├── front.png
     │   ├── back.png
     │   └── *-original.png
@@ -112,6 +125,8 @@ By default:
             ├── source.mp4
             └── frames/
 ```
+
+See [Projects and storage](projects-and-storage.md) for ZIP import/export, current-output copies, and storage configuration.
 
 `AI_GAME_STUDIO_HOME` overrides the storage root. On macOS, press **Cmd+Shift+G** in Finder and enter `~/.ai-game-studio/`.
 
