@@ -2,6 +2,20 @@
 
 Create characters, animations, and sounds from text prompts. Wombo generates four aligned character views, PNG and Aseprite animations, and MP3/WAV audio. Images and video use OpenRouter; Sound & SFX uses ElevenLabs. All provider calls run on the server.
 
+## Character creation
+
+![Creating character reference views in Wombo](ai-game-studio-character-angles.gif)
+
+## Animation creation
+
+![Creating sprite animations in Wombo](ai-game-studio-sprite-animation.gif)
+
+## Example game: After Light
+
+2.5D interplanetary-cyberpunk gameplay with graphics and sound assets created in Wombo. [Play the demo](https://acatovic.github.io/afterlight-play/).
+
+![After Light gameplay featuring sprite assets from Wombo](afterlight-demo.gif)
+
 ## Setup and run
 
 Requires Node.js 20+, `ffmpeg`, and `zip` on your PATH.
